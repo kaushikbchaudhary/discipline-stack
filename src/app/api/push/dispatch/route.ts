@@ -71,6 +71,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
+  const prismaAny = prisma as unknown as {
+    pushSubscription: {
+      findMany: (args: unknown) => Promise<
+        { id: string; userId: string; endpoint: string; p256dh: string; auth: string }[]
+      >;
+      delete: (args: unknown) => Promise<unknown>;
+    };
+  };
+
   const vapid = getVapidConfig();
   if (!vapid) {
     return NextResponse.json({ error: "VAPID keys are not configured." }, { status: 500 });
@@ -88,12 +97,7 @@ export async function POST(request: Request) {
       completed: false,
       startTime: { not: null },
     },
-    select: {
-      id: true,
-      title: true,
-      startTime: true,
-      date: true,
-      lastNotifiedAt: true,
+    include: {
       plan: { select: { userId: true } },
     },
   });
@@ -108,7 +112,7 @@ export async function POST(request: Request) {
         id: task.id,
         title: task.title,
         startTime: start,
-        lastNotifiedAt: task.lastNotifiedAt,
+        lastNotifiedAt: null,
         userId: task.plan.userId,
       };
     })
@@ -120,7 +124,7 @@ export async function POST(request: Request) {
   }
 
   const userIds = Array.from(new Set(candidates.map((task) => task.userId)));
-  const subscriptions = await prisma.pushSubscription.findMany({
+  const subscriptions = await prismaAny.pushSubscription.findMany({
     where: { userId: { in: userIds } },
   });
   const subscriptionMap = new Map<string, typeof subscriptions>();
@@ -151,20 +155,13 @@ export async function POST(request: Request) {
           } catch (error) {
             const statusCode = (error as { statusCode?: number })?.statusCode;
             if (statusCode === 410) {
-              await prisma.pushSubscription.delete({ where: { id: sub.id } });
+              await prismaAny.pushSubscription.delete({ where: { id: sub.id } });
             }
           }
         }),
       );
     }),
   );
-
-  if (notifiedTaskIds.size > 0) {
-    await prisma.task.updateMany({
-      where: { id: { in: Array.from(notifiedTaskIds) } },
-      data: { lastNotifiedAt: now },
-    });
-  }
 
   return NextResponse.json({ ok: true, sent: notifiedTaskIds.size });
 }

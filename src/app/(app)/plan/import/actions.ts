@@ -68,12 +68,19 @@ export const importPlanJson = async (payload: { json: string; hoursPerDay: numbe
       },
     });
 
-    await tx.plan.deleteMany({
+    const emptyPlans = await tx.plan.findMany({
       where: {
         userId: session.user.id,
-        startDate: { gte: startDate, lte: planEnd },
+        tasks: { none: {} },
       },
+      select: { id: true },
     });
+
+    if (emptyPlans.length > 0) {
+      await tx.plan.deleteMany({
+        where: { id: { in: emptyPlans.map((plan) => plan.id) } },
+      });
+    }
 
     const newPlan = await tx.plan.create({
       data: {

@@ -41,6 +41,7 @@ model User {
   goals            Goal[]
   goalArtifacts    GoalArtifact[]
   activeGoal       Goal?              @relation("ActiveGoal", fields: [activeGoalId], references: [id])
+  pushSubscriptions PushSubscription[]
 }
 
 model Account {

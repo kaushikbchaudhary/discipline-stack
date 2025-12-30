@@ -39,6 +39,7 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
   const [isPending, startTransition] = useTransition();
   const [activeTask, setActiveTask] = useState<PlanTaskView | null>(null);
   const [activeDay, setActiveDay] = useState<PlanDayView | null>(null);
+  const [detailDay, setDetailDay] = useState<PlanDayView | null>(null);
 
   const monthOptions = useMemo(() => {
     const map = new Map<string, { key: string; label: string; order: number }>();
@@ -113,6 +114,7 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
   const isModalOpen = Boolean(activeTask || activeDay);
   const modalTitle = activeTask ? "Edit task" : "Add task";
   const modalDate = activeTask?.date ?? activeDay?.date ?? "";
+  const detailDate = detailDay?.date ?? "";
 
   return (
     <div className="space-y-6">
@@ -151,7 +153,11 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
           const done = day.tasks.filter((task) => task.completed).length;
 
           return (
-            <div key={day.id} className="card p-4">
+            <div
+              key={day.id}
+              onClick={() => setDetailDay(day)}
+              className="card cursor-pointer p-4 transition hover:border-[color:var(--accent)]"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs text-muted">Day {day.dayIndex + 1}</p>
@@ -174,9 +180,11 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
                       >
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation();
                             setActiveTask(task);
                             setActiveDay(day);
+                            setDetailDay(null);
                           }}
                           className="flex-1 text-left"
                         >
@@ -191,7 +199,10 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
                         <button
                           type="button"
                           disabled={isPending}
-                          onClick={() => handleTaskToggle(task.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleTaskToggle(task.id);
+                          }}
                           className={`rounded-full px-2 py-1 text-xs font-semibold ${
                             task.completed
                               ? "bg-[color:var(--accent)] text-white"
@@ -208,9 +219,11 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
 
               <button
                 type="button"
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   setActiveTask(null);
                   setActiveDay(day);
+                  setDetailDay(null);
                 }}
                 className="mt-4 w-full rounded-xl border border-[color:var(--border)] px-3 py-2 text-sm font-semibold"
               >
@@ -221,9 +234,90 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
         })}
       </div>
 
+      {detailDay ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8">
+          <div className="w-full max-w-3xl max-h-[85vh] overflow-hidden rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-muted">Day details</p>
+                <h2 className="text-2xl font-semibold">
+                  {detailDate ? dateKey(new Date(detailDate)) : ""}
+                </h2>
+                <p className="text-sm text-muted">Day {detailDay.dayIndex + 1}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailDay(null)}
+                className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 max-h-[55vh] space-y-3 overflow-y-auto pr-2">
+              {detailDay.tasks.length === 0 ? (
+                <p className="text-sm text-muted">No tasks yet.</p>
+              ) : (
+                detailDay.tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="rounded-2xl border border-[color:var(--border)] px-4 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-base font-semibold">{task.title}</p>
+                        {task.description ? (
+                          <p className="text-xs text-muted">{task.description}</p>
+                        ) : null}
+                        <p className="text-xs text-muted">
+                          {task.startTime && task.endTime
+                            ? `${task.startTime}–${task.endTime}`
+                            : "Time not set"}
+                          {task.durationMinutes ? ` · ${task.durationMinutes} min` : ""}
+                        </p>
+                      </div>
+                      <span className="chip text-muted">
+                        {task.completed ? "Done" : "Pending"}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTask(task);
+                          setActiveDay(detailDay);
+                          setDetailDay(null);
+                        }}
+                        className="rounded-xl border border-[color:var(--border)] px-3 py-1 text-xs font-semibold"
+                      >
+                        Edit task
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTask(null);
+                  setActiveDay(detailDay);
+                  setDetailDay(null);
+                }}
+                className="w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
+              >
+                Add task
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {isModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-3xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">{modalTitle}</p>
@@ -249,7 +343,7 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
                 }
                 closeModal();
               }}
-              className="mt-6 grid gap-4"
+              className="mt-6 max-h-[70vh] overflow-y-auto pr-2 grid gap-4"
             >
               {activeTask ? <input type="hidden" name="id" value={activeTask.id} /> : null}
               <input type="hidden" name="date" value={modalDate} />

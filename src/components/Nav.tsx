@@ -15,8 +15,15 @@ const links = [
   { href: "/export", label: "Export" },
 ];
 
-export default function Nav({ userName }: { userName?: string | null }) {
+export default function Nav({
+  userName,
+  quietMode,
+}: {
+  userName?: string | null;
+  quietMode?: boolean;
+}) {
   const pathname = usePathname();
+  const visibleLinks = quietMode ? links.filter((link) => link.href === "/today") : links;
 
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--surface)]/80 backdrop-blur">
@@ -28,7 +35,7 @@ export default function Nav({ userName }: { userName?: string | null }) {
           <span className="text-sm text-muted">{userName ?? ""}</span>
         </div>
         <nav className="flex flex-wrap items-center gap-2">
-          {links.map((link) => {
+          {visibleLinks.map((link) => {
             const active = pathname === link.href;
             return (
               <Link

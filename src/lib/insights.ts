@@ -5,12 +5,15 @@ export const computeWeeklyInsights = async (userId: string, weekStartDate: Date)
   const start = startOfDay(weekStartDate);
   const end = addDays(start, 7);
 
-  const [mandatoryBlocks, completions, dailyCompletions] = await Promise.all([
+  const [mandatoryBlocks, completions, dailyCompletions, resistances] = await Promise.all([
     prisma.scheduleBlock.findMany({ where: { userId, mandatory: true } }),
     prisma.blockCompletion.findMany({
       where: { userId, date: { gte: start, lt: end } },
     }),
     prisma.dailyCompletion.findMany({
+      where: { userId, date: { gte: start, lt: end } },
+    }),
+    prisma.blockResistance.findMany({
       where: { userId, date: { gte: start, lt: end } },
     }),
   ]);
@@ -56,9 +59,18 @@ export const computeWeeklyInsights = async (userId: string, weekStartDate: Date)
         ? "declining"
         : "stable";
 
+  const reasonCounts = resistances.reduce<Record<string, number>>((acc, item) => {
+    acc[item.reason] = (acc[item.reason] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const mostSkippedReason =
+    Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? \"\";
+
   return {
     missedByCategory,
     mostSkippedHour: mostSkippedHourValue,
     trend,
+    mostSkippedReason,
   };
 };

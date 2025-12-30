@@ -21,6 +21,10 @@ export async function GET() {
     failureDays,
     planChangeLogs,
     weeklyInsights,
+    dailyWins,
+    blockResistances,
+    nextActions,
+    quietWeeks,
   ] = await Promise.all([
     prisma.scheduleBlock.findMany({ where: { userId } }),
     prisma.plan.findMany({
@@ -34,6 +38,10 @@ export async function GET() {
     prisma.failureDay.findMany({ where: { userId } }),
     prisma.planChangeLog.findMany({ where: { userId } }),
     prisma.weeklyInsights.findMany({ where: { userId } }),
+    prisma.dailyWin.findMany({ where: { userId } }),
+    prisma.blockResistance.findMany({ where: { userId } }),
+    prisma.nextAction.findMany({ where: { userId } }),
+    prisma.quietWeek.findMany({ where: { userId } }),
   ]);
 
   return NextResponse.json({
@@ -46,5 +54,9 @@ export async function GET() {
     failureDays,
     planChangeLogs,
     weeklyInsights,
+    dailyWins,
+    blockResistances,
+    nextActions,
+    quietWeeks,
   });
 }

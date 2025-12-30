@@ -8,6 +8,8 @@ import { outputSchema } from "@/lib/validation";
 import { refreshDailyCompletion } from "@/lib/progress";
 import { startOfDay } from "@/lib/time";
 import { resolveDebt as resolveDebtRecord } from "@/lib/debt";
+import { getDailyWinConfig, setDailyWinConfig, upsertDailyWin } from "@/lib/dailyWin";
+import { canEnableQuietWeek, enableQuietWeek } from "@/lib/quiet";
 
 export const toggleBlockCompletion = async (blockId: string) => {
   const session = await getServerAuthSession();
@@ -31,9 +33,29 @@ export const toggleBlockCompletion = async (blockId: string) => {
   if (existing) {
     await prisma.blockCompletion.delete({ where: { id: existing.id } });
   } else {
+    const nextAction = await prisma.nextAction.findUnique({
+      where: {
+        userId_blockId_date: {
+          userId: session.user.id,
+          blockId,
+          date,
+        },
+      },
+    });
+    if (!nextAction) {
+      return { ok: false, error: "Next action required before starting this block." };
+    }
     await prisma.blockCompletion.create({
       data: { userId: session.user.id, scheduleBlockId: blockId, date },
     });
+
+    const winConfig = await getDailyWinConfig(session.user.id);
+    if (
+      (winConfig.type === "block" || winConfig.type === "either") &&
+      winConfig.blockId === blockId
+    ) {
+      await upsertDailyWin(session.user.id, date, `block:${blockId}`);
+    }
   }
 
   await refreshDailyCompletion(session.user.id, date);
@@ -104,7 +126,145 @@ export const saveOutput = async (formData: FormData) => {
     },
   });
 
+  const winConfig = await getDailyWinConfig(session.user.id);
+  if (winConfig.type === "output" || winConfig.type === "either") {
+    await upsertDailyWin(session.user.id, date, "output");
+  }
+
   await refreshDailyCompletion(session.user.id, date);
+  revalidatePath("/today");
+  return { ok: true };
+};
+
+export const saveDailyWinConfig = async (formData: FormData) => {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Not authenticated." };
+  }
+
+  const type = String(formData.get("winType"));
+  const blockId = String(formData.get("blockId") ?? "");
+
+  if (type !== "output" && type !== "block" && type !== "either") {
+    return { ok: false, error: "Invalid daily win selection." };
+  }
+
+  if ((type === "block" || type === "either") && !blockId) {
+    return { ok: false, error: "Select a block for Daily Win." };
+  }
+
+  await setDailyWinConfig(session.user.id, {
+    type: type as "block" | "output" | "either",
+    blockId: type === "block" || type === "either" ? blockId : null,
+  });
+
+  revalidatePath("/today");
+  return { ok: true };
+};
+
+export const saveNextAction = async (formData: FormData) => {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Not authenticated." };
+  }
+
+  const blockId = String(formData.get("blockId") ?? "");
+  const text = String(formData.get("text") ?? "").trim();
+
+  if (!blockId) {
+    return { ok: false, error: "Block is required." };
+  }
+
+  if (!text || text.length > 120) {
+    return { ok: false, error: "Next action must be 1-120 characters." };
+  }
+
+  const date = startOfDay(new Date());
+
+  const block = await prisma.scheduleBlock.findFirst({
+    where: { id: blockId, userId: session.user.id },
+  });
+
+  if (!block) {
+    return { ok: false, error: "Block not found." };
+  }
+
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  if (minutes >= block.startTime) {
+    return { ok: false, error: "Next action can only be edited before block start." };
+  }
+
+  await prisma.nextAction.upsert({
+    where: { userId_blockId_date: { userId: session.user.id, blockId, date } },
+    create: { userId: session.user.id, blockId, date, text },
+    update: { text },
+  });
+
+  revalidatePath("/today");
+  return { ok: true };
+};
+
+export const logResistance = async (formData: FormData) => {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Not authenticated." };
+  }
+
+  const blockId = String(formData.get("blockId") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  const date = startOfDay(new Date());
+
+  if (!blockId) {
+    return { ok: false, error: "Block is required." };
+  }
+
+  const allowed = [
+    "TOO_TIRED",
+    "AVOIDANCE",
+    "UNCLEAR_NEXT_STEP",
+    "EXTERNAL_INTERRUPTION",
+    "OVERPLANNED",
+  ];
+
+  if (!allowed.includes(reason)) {
+    return { ok: false, error: "Select a valid reason." };
+  }
+
+  const block = await prisma.scheduleBlock.findFirst({
+    where: { id: blockId, userId: session.user.id },
+  });
+  if (!block?.mandatory) {
+    return { ok: false, error: "Resistance logging is only for mandatory blocks." };
+  }
+
+  await prisma.blockCompletion.deleteMany({
+    where: { userId: session.user.id, scheduleBlockId: blockId, date },
+  });
+
+  await prisma.blockResistance.upsert({
+    where: { userId_blockId_date: { userId: session.user.id, blockId, date } },
+    create: { userId: session.user.id, blockId, date, reason: reason as any },
+    update: { reason: reason as any },
+  });
+
+  await refreshDailyCompletion(session.user.id, date);
+  revalidatePath("/today");
+  return { ok: true };
+};
+
+export const toggleQuietWeek = async () => {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Not authenticated." };
+  }
+
+  const canEnable = await canEnableQuietWeek(session.user.id);
+  if (!canEnable) {
+    return { ok: false, error: "Quiet Mode can be enabled once every 2 weeks." };
+  }
+
+  await enableQuietWeek(session.user.id);
   revalidatePath("/today");
   return { ok: true };
 };

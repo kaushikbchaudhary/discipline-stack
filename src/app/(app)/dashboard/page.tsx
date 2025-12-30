@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { getQuietWeek } from "@/lib/quiet";
 import {
   getBlockConsistency,
   getDailyCompletionStats,
@@ -22,6 +23,10 @@ export default async function DashboardPage() {
   }
 
   const userId = session.user.id;
+  const quietWeek = await getQuietWeek(userId);
+  if (quietWeek) {
+    redirect("/today");
+  }
 
   const [dailyStats, streaks, blockConsistency, outputStats, weeklySummaries, recovery, allocation] =
     await Promise.all([
@@ -38,6 +43,7 @@ export default async function DashboardPage() {
 
   const completedDays = dailyStats.filter((item) => item.status === "complete").length;
   const failureDays = dailyStats.filter((item) => item.status === "failure").length;
+  const salvagedDays = dailyStats.filter((item) => item.status === "salvaged").length;
   const incompleteDays = dailyStats.filter((item) => item.status === "incomplete").length;
 
   const outputVolumeData = outputStats.weeks.map((week) => ({
@@ -75,7 +81,11 @@ export default async function DashboardPage() {
             <span className="chip text-muted">Last 30 days</span>
           </div>
           <div className="relative mt-6">
-            <ExecutionRing complete={completedDays} incomplete={incompleteDays} failure={failureDays} />
+            <ExecutionRing
+              complete={completedDays}
+              incomplete={incompleteDays + salvagedDays}
+              failure={failureDays}
+            />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <p className="text-2xl font-semibold">{completedDays} / 30</p>
               <p className="text-xs text-muted">days executed</p>
@@ -83,6 +93,7 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-4 space-y-2 text-sm text-muted">
             <p>Complete: {completedDays}</p>
+            <p>Salvaged: {salvagedDays}</p>
             <p>Incomplete: {incompleteDays}</p>
             <p>Failure: {failureDays}</p>
           </div>
@@ -100,7 +111,9 @@ export default async function DashboardPage() {
                   ? "bg-[color:var(--accent)]"
                   : item.status === "failure"
                     ? "bg-amber-200"
-                    : "bg-[color:var(--border)]";
+                    : item.status === "salvaged"
+                      ? "bg-[#6b8c8f]"
+                      : "bg-[color:var(--border)]";
               const title = `${dateKey(toDate(item.date))} · ${item.mandatoryCompletedCount}/${item.mandatoryTotalCount} mandatory · ${item.outputSummary}`;
               return (
                 <div
@@ -114,6 +127,9 @@ export default async function DashboardPage() {
           <div className="mt-4 grid gap-2 text-xs text-muted sm:grid-cols-3">
             <span className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[color:var(--accent)]" /> Complete
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#6b8c8f]" /> Salvaged
             </span>
             <span className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[color:var(--border)]" /> Incomplete

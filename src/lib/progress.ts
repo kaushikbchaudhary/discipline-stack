@@ -25,7 +25,7 @@ export const getPlanForDate = async (userId: string, date: Date) => {
 
 export const refreshDailyCompletion = async (userId: string, date: Date) => {
   const targetDate = startOfDay(date);
-  const [blocks, completions, daily, plan, failureDay, unresolvedDebt] = await Promise.all([
+  const [blocks, completions, daily, plan, failureDay, unresolvedDebt, dailyWin] = await Promise.all([
     prisma.scheduleBlock.findMany({
       where: { userId, mandatory: true },
     }),
@@ -42,6 +42,9 @@ export const refreshDailyCompletion = async (userId: string, date: Date) => {
     prisma.executionDebt.findFirst({
       where: { userId, resolvedAt: null },
       orderBy: { createdAt: "asc" },
+    }),
+    prisma.dailyWin.findUnique({
+      where: { userId_date: { userId, date: targetDate } },
     }),
   ]);
 
@@ -70,6 +73,7 @@ export const refreshDailyCompletion = async (userId: string, date: Date) => {
   const outputReady = Boolean(daily?.outputContent && daily?.outputType);
   const hasDebt = Boolean(unresolvedDebt);
   const isFailureDay = Boolean(failureDay);
+  const hasDailyWin = Boolean(dailyWin);
   const isComplete = !hasDebt && !isFailureDay && mandatoryBlocksDone && mandatoryTasksDone && outputReady;
   const completedAt = isComplete ? daily?.completedAt ?? new Date() : null;
 
@@ -100,5 +104,6 @@ export const refreshDailyCompletion = async (userId: string, date: Date) => {
     isComplete,
     hasDebt,
     isFailureDay,
+    hasDailyWin,
   };
 };

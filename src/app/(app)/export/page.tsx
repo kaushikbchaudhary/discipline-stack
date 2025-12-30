@@ -1,6 +1,19 @@
 import ExportClient from "@/app/(app)/export/ExportClient";
+import { getServerAuthSession } from "@/lib/auth";
+import { getQuietWeek } from "@/lib/quiet";
+import { redirect } from "next/navigation";
 
-export default function ExportPage() {
+export default async function ExportPage() {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  const quietWeek = await getQuietWeek(session.user.id);
+  if (quietWeek) {
+    redirect("/today");
+  }
+
   return (
     <div className="space-y-6">
       <div>

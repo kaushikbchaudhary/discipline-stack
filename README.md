@@ -3,8 +3,8 @@
 Execution OS is a production-ready Next.js app that turns a daily timetable + 30-day tracker into a forced execution loop. A day completes only when mandatory blocks are done and a non-replaceable output is attached.
 
 ## Versioning
-- Current version: 0.3.0
-- Phase docs: `docs/phase/v0.1.0.md`, `docs/phase/v0.2.0.md`, `docs/phase/v0.3.0.md`
+- Current version: 0.3.1
+- Phase docs: `docs/phase/v0.1.0.md`, `docs/phase/v0.2.0.md`, `docs/phase/v0.3.0.md`, `docs/phase/v0.3.1.md`
 
 ## Features
 - Onboarding that generates a default timetable from wake time + block durations.
@@ -98,3 +98,11 @@ See `docs/dashboard.md` for visual meaning and metrics definitions.
 - Weekly Insights: missed blocks by category, most skipped hour, consistency trend.
 - Plan Lock + Drift Detection: plan locked by default, changes require a reason, warns on frequent edits.
 - Timeline: 30-day execution history with outputs, notes, and debt status.
+
+## Phase 3.1 – Retention & Honesty Layer
+- Daily Win + Salvaged days
+- Next Action enforcement per block
+- Resistance logging (enum only)
+- Quiet Mode (weekly)
+- Time Reality check
+- Output portability (Markdown + PDF)

@@ -4,11 +4,17 @@ import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { addDays, dateKey, startOfDay } from "@/lib/time";
 import { calculateStreak, completionRate } from "@/lib/stats";
+import { getQuietWeek } from "@/lib/quiet";
 
 export default async function ProgressPage() {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
     redirect("/login");
+  }
+
+  const quietWeek = await getQuietWeek(session.user.id);
+  if (quietWeek) {
+    redirect("/today");
   }
 
   const today = startOfDay(new Date());

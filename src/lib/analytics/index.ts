@@ -17,7 +17,7 @@ export const getDailyCompletionStats = unstable_cache(
   async (userId: string, days = 30) => {
     const { start, end } = buildDateRange(days);
 
-    const [mandatoryBlocks, completions, dailyCompletions, failureDays] = await Promise.all([
+    const [mandatoryBlocks, completions, dailyCompletions, failureDays, dailyWins] = await Promise.all([
       prisma.scheduleBlock.findMany({ where: { userId, mandatory: true } }),
       prisma.blockCompletion.findMany({
         where: { userId, date: { gte: start, lt: end } },
@@ -26,6 +26,9 @@ export const getDailyCompletionStats = unstable_cache(
         where: { userId, date: { gte: start, lt: end } },
       }),
       prisma.failureDay.findMany({
+        where: { userId, date: { gte: start, lt: end } },
+      }),
+      prisma.dailyWin.findMany({
         where: { userId, date: { gte: start, lt: end } },
       }),
     ]);
@@ -40,6 +43,7 @@ export const getDailyCompletionStats = unstable_cache(
 
     const dailyMap = new Map(dailyCompletions.map((item) => [toKey(item.date), item]));
     const failureMap = new Set(failureDays.map((item) => toKey(item.date)));
+    const winMap = new Set(dailyWins.map((item) => toKey(item.date)));
 
     const stats = Array.from({ length: days }).map((_, index) => {
       const date = addDays(start, index);
@@ -52,7 +56,13 @@ export const getDailyCompletionStats = unstable_cache(
       ).length;
       const isFailure = failureMap.has(key);
       const isComplete = Boolean(daily?.completedAt);
-      const status = isFailure ? "failure" : isComplete ? "complete" : "incomplete";
+      const status = isFailure
+        ? "failure"
+        : isComplete
+          ? "complete"
+          : winMap.has(key)
+            ? "salvaged"
+            : "incomplete";
 
       return {
         date,
@@ -368,5 +378,40 @@ export const getTimeAllocation = unstable_cache(
     };
   },
   ["time-allocation"],
+  { revalidate: 600 },
+);
+
+export const getWeeklyTimeReality = unstable_cache(
+  async (userId: string, weekStart: Date) => {
+    const start = startOfDay(weekStart);
+    const end = addDays(start, 7);
+    const blocks = await prisma.scheduleBlock.findMany({ where: { userId, mandatory: true } });
+
+    const plannedMinutes =
+      blocks.reduce((sum, block) => sum + (block.endTime - block.startTime), 0) * 7;
+
+    const completions = await prisma.blockCompletion.findMany({
+      where: { userId, date: { gte: start, lt: end } },
+      include: { scheduleBlock: true },
+    });
+
+    const executedMinutes = completions.reduce(
+      (sum, item) => sum + (item.scheduleBlock.endTime - item.scheduleBlock.startTime),
+      0,
+    );
+
+    const recoveredCount = await prisma.executionDebt.count({
+      where: { userId, resolvedAt: { not: null, gte: start, lt: end } },
+    });
+
+    const recoveredMinutes = recoveredCount * 30;
+
+    return {
+      plannedMinutes,
+      executedMinutes,
+      recoveredMinutes,
+    };
+  },
+  [\"weekly-time-reality\"],
   { revalidate: 600 },
 );

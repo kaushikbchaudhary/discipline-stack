@@ -17,6 +17,8 @@ model User {
   scheduleLocked      Boolean           @default(false)
   scheduleLockVersion Int               @default(1)
   pastEditUnlocked    Boolean           @default(false)
+  dailyWinType        String?
+  dailyWinBlockId     String?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -31,6 +33,10 @@ model User {
   failureDays      FailureDay[]
   planChangeLogs   PlanChangeLog[]
   weeklyInsights   WeeklyInsights[]
+  dailyWins        DailyWin[]
+  quietWeeks       QuietWeek[]
+  blockResistances BlockResistance[]
+  nextActions      NextAction[]
 }
 
 model Account {
@@ -83,6 +89,8 @@ model ScheduleBlock {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   blockCompletions BlockCompletion[]
+  nextActions NextAction[]
+  resistances BlockResistance[]
 
   @@index([userId])
 }
@@ -180,6 +188,69 @@ model WeeklyReview {
   @@index([userId, weekStartDate])
 }
 
+enum ResistanceReason {
+  TOO_TIRED
+  AVOIDANCE
+  UNCLEAR_NEXT_STEP
+  EXTERNAL_INTERRUPTION
+  OVERPLANNED
+}
+
+model DailyWin {
+  id          String   @id @default(cuid())
+  userId      String
+  date        DateTime
+  satisfiedBy String
+  satisfiedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model BlockResistance {
+  id       String   @id @default(cuid())
+  userId   String
+  blockId  String
+  date     DateTime
+  reason   ResistanceReason
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  block ScheduleBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, blockId, date])
+  @@index([userId, date])
+}
+
+model NextAction {
+  id       String   @id @default(cuid())
+  userId   String
+  blockId  String
+  date     DateTime
+  text     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  block ScheduleBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, blockId, date])
+  @@index([userId, date])
+}
+
+model QuietWeek {
+  id            String   @id @default(cuid())
+  userId        String
+  weekStartDate DateTime
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStartDate])
+  @@index([userId, weekStartDate])
+}
 model ExecutionDebt {
   id             String    @id @default(cuid())
   userId         String

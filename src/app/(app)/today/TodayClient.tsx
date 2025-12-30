@@ -6,9 +6,13 @@ import { useRouter } from "next/navigation";
 
 import { minutesToTimeString } from "@/lib/time";
 import {
+  logResistance,
   markFailureDay,
   resolveDebt,
+  saveDailyWinConfig,
+  saveNextAction,
   saveOutput,
+  toggleQuietWeek,
   toggleBlockCompletion,
   toggleTaskCompletion,
 } from "@/app/(app)/today/actions";
@@ -36,6 +40,12 @@ type TodayClientProps = {
   tasks: TaskView[];
   outputType?: string | null;
   outputContent?: string | null;
+  dailyWinConfig: {
+    type: "block" | "output" | "either";
+    blockId?: string | null;
+  };
+  nextActions: Record<string, string>;
+  quietMode: boolean;
   debts: {
     id: string;
     missedDate: string;
@@ -55,7 +65,9 @@ type TodayClientProps = {
     isComplete: boolean;
     hasDebt: boolean;
     isFailureDay: boolean;
+    isSalvaged: boolean;
   };
+  dailyWinSatisfied: boolean;
 };
 
 export default function TodayClient({
@@ -63,10 +75,14 @@ export default function TodayClient({
   tasks,
   outputType,
   outputContent,
+  dailyWinConfig,
+  nextActions,
+  quietMode,
   debts,
   failureDay,
   progress,
   status,
+  dailyWinSatisfied,
 }: TodayClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -126,6 +142,60 @@ export default function TodayClient({
         router.refresh();
       } else {
         toast.error(result.error || "Add a valid output entry.");
+      }
+    });
+  };
+
+  const handleWinConfig = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const result = await saveDailyWinConfig(formData);
+      if (result.ok) {
+        toast.success("Daily Win updated.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not update Daily Win.");
+      }
+    });
+  };
+
+  const handleNextAction = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const result = await saveNextAction(formData);
+      if (result.ok) {
+        toast.success("Next action saved.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not save next action.");
+      }
+    });
+  };
+
+  const handleResistance = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const result = await logResistance(formData);
+      if (result.ok) {
+        toast.success("Resistance logged.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not log resistance.");
+      }
+    });
+  };
+
+  const handleQuietMode = () => {
+    startTransition(async () => {
+      const result = await toggleQuietWeek();
+      if (result.ok) {
+        toast.success("Quiet Mode enabled for this week.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not enable Quiet Mode.");
       }
     });
   };
@@ -306,37 +376,165 @@ export default function TodayClient({
 
         <div className="card p-6">
           <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold">Quiet Mode</h3>
+            {quietMode ? <span className="chip text-muted">Active</span> : null}
+          </div>
+          <p className="mt-2 text-sm text-muted">
+            Hide streaks and dashboards for the current week.
+          </p>
+          <button
+            type="button"
+            disabled={isPending || quietMode}
+            onClick={handleQuietMode}
+            className="mt-3 w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
+          >
+            {quietMode ? "Quiet Mode enabled" : "Enable Quiet Mode"}
+          </button>
+        </div>
+
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold">Daily Win</h3>
+          <p className="mt-2 text-sm text-muted">
+            One win counts as a salvaged day when the rest is incomplete.
+          </p>
+          <form onSubmit={handleWinConfig} className="mt-4 space-y-3">
+            <div className="flex flex-wrap gap-3 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="winType"
+                  value="output"
+                  defaultChecked={dailyWinConfig.type === "output"}
+                />
+                Non-replaceable output
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="winType"
+                  value="either"
+                  defaultChecked={dailyWinConfig.type === "either"}
+                />
+                Income block or output
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="winType"
+                  value="block"
+                  defaultChecked={dailyWinConfig.type === "block"}
+                />
+                Mandatory block
+              </label>
+            </div>
+            <select
+              name="blockId"
+              defaultValue={dailyWinConfig.blockId ?? ""}
+              className="w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select block</option>
+              {blocks
+                .filter((block) => block.mandatory)
+                .map((block) => (
+                  <option key={block.id} value={block.id}>
+                    {block.name}
+                  </option>
+                ))}
+            </select>
+            <button
+              type="submit"
+              disabled={isPending}
+              className="w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
+            >
+              Save Daily Win
+            </button>
+          </form>
+        </div>
+
+        <div className="card p-6">
+          <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold">Timetable</h3>
             <span className="chip text-muted">Mandatory blocks need completion</span>
           </div>
           <div className="mt-4 space-y-3">
             {blocks.map((block) => (
-              <button
+              <div
                 key={block.id}
-                type="button"
-                disabled={isPending}
-                onClick={() => handleBlockToggle(block.id)}
-                className={`flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] px-4 py-3 text-left transition hover:border-[color:var(--accent)] ${
+                className={`rounded-2xl border border-[color:var(--border)] px-4 py-3 ${
                   block.completed ? "bg-[color:var(--bg-alt)]" : "bg-white"
                 }`}
               >
-                <div>
-                  <p className="text-sm text-muted">
-                    {minutesToTimeString(block.startTime)} - {minutesToTimeString(block.endTime)}
-                  </p>
-                  <p className="text-base font-semibold">{block.name}</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted">
+                      {minutesToTimeString(block.startTime)} - {minutesToTimeString(block.endTime)}
+                    </p>
+                    <p className="text-base font-semibold">{block.name}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {block.mandatory && (
+                      <span className="chip text-xs text-muted">Mandatory</span>
+                    )}
+                    <span
+                      className={`h-3 w-3 rounded-full ${
+                        block.completed ? "bg-[color:var(--accent)]" : "bg-[color:var(--border)]"
+                      }`}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {block.mandatory && (
-                    <span className="chip text-xs text-muted">Mandatory</span>
-                  )}
-                  <span
-                    className={`h-3 w-3 rounded-full ${
-                      block.completed ? "bg-[color:var(--accent)]" : "bg-[color:var(--border)]"
-                    }`}
+                <form onSubmit={handleNextAction} className="mt-3 flex flex-wrap gap-2">
+                  <input type="hidden" name="blockId" value={block.id} />
+                  <input
+                    name="text"
+                    defaultValue={nextActions[block.id] ?? ""}
+                    maxLength={120}
+                    placeholder="Next action"
+                    disabled={now.getHours() * 60 + now.getMinutes() >= block.startTime}
+                    className="flex-1 rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
                   />
-                </div>
-              </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      isPending || now.getHours() * 60 + now.getMinutes() >= block.startTime
+                    }
+                    className="rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs font-semibold"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleBlockToggle(block.id)}
+                    className="rounded-xl bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    {block.completed ? "Undo" : "Complete"}
+                  </button>
+                </form>
+                {block.mandatory && !block.completed ? (
+                  <form onSubmit={handleResistance} className="mt-2 flex flex-wrap gap-2">
+                    <input type="hidden" name="blockId" value={block.id} />
+                    <select
+                      name="reason"
+                      required
+                      className="rounded-xl border border-[color:var(--border)] bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="">Select reason</option>
+                      <option value="TOO_TIRED">Too tired</option>
+                      <option value="AVOIDANCE">Avoidance</option>
+                      <option value="UNCLEAR_NEXT_STEP">Unclear next step</option>
+                      <option value="EXTERNAL_INTERRUPTION">External interruption</option>
+                      <option value="OVERPLANNED">Overplanned</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs font-semibold"
+                    >
+                      Log resistance
+                    </button>
+                  </form>
+                ) : null}
+              </div>
             ))}
             {blocks.length === 0 ? (
               <p className="text-sm text-muted">No timetable blocks yet.</p>
@@ -430,9 +628,17 @@ export default function TodayClient({
             <p>Mandatory blocks: {status.mandatoryBlocksDone ? "Done" : "Pending"}</p>
             <p>Mandatory tasks: {status.mandatoryTasksDone ? "Done" : "Pending"}</p>
             <p>Output attached: {status.outputReady ? "Done" : "Pending"}</p>
+            <p>Daily Win: {dailyWinSatisfied ? "Done" : "Pending"}</p>
             <p>Execution debt: {status.hasDebt ? "Pending" : "Clear"}</p>
             <p className="pt-2 text-base font-semibold text-black">
-              Day status: {status.isFailureDay ? "Failure day" : status.isComplete ? "Complete" : "Incomplete"}
+              Day status:{" "}
+              {status.isFailureDay
+                ? "Failure day"
+                : status.isComplete
+                  ? "Complete"
+                  : status.isSalvaged
+                    ? "Salvaged"
+                    : "Incomplete"}
             </p>
           </div>
         </div>

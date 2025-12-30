@@ -4,6 +4,8 @@ import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshDailyCompletion } from "@/lib/progress";
 import { ensureDebtForMissedDay, getUnresolvedDebt } from "@/lib/debt";
+import { getDailyWin, getDailyWinConfig } from "@/lib/dailyWin";
+import { getQuietWeek } from "@/lib/quiet";
 import { dateKey, startOfDay } from "@/lib/time";
 import TodayClient from "@/app/(app)/today/TodayClient";
 
@@ -20,7 +22,18 @@ export default async function TodayPage() {
 
   await ensureDebtForMissedDay(userId, yesterday);
 
-  const [blocks, blockCompletions, daily, plans, failureDay, debts] = await Promise.all([
+  const [
+    blocks,
+    blockCompletions,
+    daily,
+    plans,
+    failureDay,
+    debts,
+    dailyWin,
+    winConfig,
+    nextActions,
+    quietWeek,
+  ] = await Promise.all([
     prisma.scheduleBlock.findMany({
       where: { userId },
       orderBy: { startTime: "asc" },
@@ -40,6 +53,10 @@ export default async function TodayPage() {
       where: { userId_date: { userId, date: today } },
     }),
     getUnresolvedDebt(userId),
+    getDailyWin(userId, today),
+    getDailyWinConfig(userId),
+    prisma.nextAction.findMany({ where: { userId, date: today } }),
+    getQuietWeek(userId),
   ]);
 
   const plan = plans.find((item) => {
@@ -70,6 +87,12 @@ export default async function TodayPage() {
     (debtGate ? 0 : 1);
   const requiredCount = mandatoryBlocks.length + mandatoryTasks.length + 1 + (debtGate ? 1 : 0);
   const percent = requiredCount === 0 ? 0 : Math.round((doneCount / requiredCount) * 100);
+  const dailyWinSatisfied = completionState.hasDailyWin || Boolean(dailyWin);
+  const isSalvaged =
+    !completionState.isComplete &&
+    !completionState.isFailureDay &&
+    !completionState.hasDebt &&
+    dailyWinSatisfied;
 
   return (
     <div className="space-y-6">
@@ -109,6 +132,11 @@ export default async function TodayPage() {
         }
         outputType={daily?.outputType}
         outputContent={daily?.outputContent}
+        dailyWinConfig={winConfig}
+        nextActions={Object.fromEntries(
+          nextActions.map((item) => [item.blockId, item.text]),
+        )}
+        quietMode={Boolean(quietWeek)}
         failureDay={Boolean(failureDay)}
         debts={debts.map((debt) => ({
           id: debt.id,
@@ -124,7 +152,9 @@ export default async function TodayPage() {
           isComplete: completionState.isComplete,
           hasDebt: completionState.hasDebt,
           isFailureDay: completionState.isFailureDay,
+          isSalvaged,
         }}
+        dailyWinSatisfied={dailyWinSatisfied}
       />
 
       {blocks.length === 0 ? (

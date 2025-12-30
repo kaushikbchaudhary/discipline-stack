@@ -3,11 +3,17 @@ import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PlanClient from "@/app/(app)/plan/PlanClient";
+import { getQuietWeek } from "@/lib/quiet";
 
 export default async function PlanPage() {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
     redirect("/login");
+  }
+
+  const quietWeek = await getQuietWeek(session.user.id);
+  if (quietWeek) {
+    redirect("/today");
   }
 
   const user = await prisma.user.findUnique({

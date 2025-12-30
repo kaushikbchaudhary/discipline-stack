@@ -18,6 +18,12 @@ type ReviewClientProps = {
     missedByCategory: Record<string, number>;
     mostSkippedHour: number;
     trend: string;
+    mostSkippedReason: string;
+  };
+  timeReality: {
+    plannedMinutes: number;
+    executedMinutes: number;
+    recoveredMinutes: number;
   };
 };
 
@@ -30,6 +36,7 @@ export default function ReviewClient({
   resistanceBlock,
   locked,
   insights,
+  timeReality,
 }: ReviewClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -55,6 +62,9 @@ export default function ReviewClient({
         <div className="mt-3 space-y-2 text-sm text-muted">
           <p>Consistency trend: {insights.trend}</p>
           <p>Most skipped hour: {String(insights.mostSkippedHour).padStart(2, "0")}:00</p>
+          <p>
+            Most skipped due to: {insights.mostSkippedReason || "Not enough data"}
+          </p>
           <div>
             Missed blocks by category:
             <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -69,6 +79,15 @@ export default function ReviewClient({
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="card p-6">
+        <h2 className="text-xl font-semibold">Time reality check</h2>
+        <div className="mt-3 space-y-2 text-sm text-muted">
+          <p>Planned time: {timeReality.plannedMinutes} minutes</p>
+          <p>Executed time: {timeReality.executedMinutes} minutes</p>
+          <p>Recovered time: {timeReality.recoveredMinutes} minutes</p>
         </div>
       </div>
 

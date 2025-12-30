@@ -9,6 +9,7 @@ const links = [
   { href: "/timetable", label: "Timetable" },
   { href: "/plan", label: "Plan" },
   { href: "/progress", label: "Progress" },
+  { href: "/timeline", label: "Timeline" },
   { href: "/review", label: "Review" },
   { href: "/export", label: "Export" },
 ];

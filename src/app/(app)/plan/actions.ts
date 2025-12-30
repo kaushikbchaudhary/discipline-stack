@@ -19,6 +19,32 @@ const assertEditable = async (userId: string, date: Date) => {
   }
 };
 
+const assertPlanUnlocked = async (planId: string) => {
+  const plan = await prisma.plan.findUnique({ where: { id: planId } });
+  if (!plan) {
+    throw new Error("Plan not found.");
+  }
+  if (plan.locked) {
+    throw new Error("Plan is locked. Unlock to edit.");
+  }
+  return plan;
+};
+
+const logPlanChange = async (
+  userId: string,
+  planId: string,
+  changeType: string,
+  details: string,
+  reason: string,
+) => {
+  if (!reason.trim()) {
+    throw new Error("Reason is required for plan changes.");
+  }
+  await prisma.planChangeLog.create({
+    data: { userId, planId, changeType, details, reason },
+  });
+};
+
 export const togglePastEdit = async () => {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
@@ -83,6 +109,7 @@ export const updateTask = async (formData: FormData) => {
   const title = String(formData.get("title"));
   const category = String(formData.get("category"));
   const mandatory = formData.get("mandatory") !== null;
+  const reason = String(formData.get("reason") ?? "");
 
   const task = await prisma.task.findFirst({
     where: { id: taskId, planDay: { plan: { userId: session.user.id } } },
@@ -95,6 +122,14 @@ export const updateTask = async (formData: FormData) => {
 
   try {
     await assertEditable(session.user.id, task.planDay.date);
+    await assertPlanUnlocked(task.planDay.planId);
+    await logPlanChange(
+      session.user.id,
+      task.planDay.planId,
+      "task_update",
+      `Updated task: ${task.title}`,
+      reason,
+    );
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
@@ -119,6 +154,7 @@ export const addTask = async (formData: FormData) => {
   const title = String(formData.get("title"));
   const category = String(formData.get("category"));
   const mandatory = formData.get("mandatory") !== null;
+  const reason = String(formData.get("reason") ?? "");
 
   const planDay = await prisma.planDay.findFirst({
     where: { id: planDayId, plan: { userId: session.user.id } },
@@ -130,6 +166,14 @@ export const addTask = async (formData: FormData) => {
 
   try {
     await assertEditable(session.user.id, planDay.date);
+    await assertPlanUnlocked(planDay.planId);
+    await logPlanChange(
+      session.user.id,
+      planDay.planId,
+      "task_add",
+      `Added task: ${title}`,
+      reason,
+    );
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
@@ -158,6 +202,7 @@ export const deleteTask = async (formData: FormData) => {
   }
 
   const taskId = String(formData.get("id"));
+  const reason = String(formData.get("reason") ?? "");
 
   const task = await prisma.task.findFirst({
     where: { id: taskId, planDay: { plan: { userId: session.user.id } } },
@@ -170,6 +215,14 @@ export const deleteTask = async (formData: FormData) => {
 
   try {
     await assertEditable(session.user.id, task.planDay.date);
+    await assertPlanUnlocked(task.planDay.planId);
+    await logPlanChange(
+      session.user.id,
+      task.planDay.planId,
+      "task_delete",
+      `Removed task: ${task.title}`,
+      reason,
+    );
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
@@ -190,4 +243,42 @@ export const regeneratePlan = async () => {
   await createDefaultPlan(session.user.id, new Date());
   revalidatePath("/plan");
   return { ok: true };
+};
+
+export const togglePlanLock = async (formData: FormData) => {
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Not authenticated." };
+  }
+
+  const planId = String(formData.get("planId"));
+  const reason = String(formData.get("reason") ?? "");
+
+  const plan = await prisma.plan.findUnique({
+    where: { id: planId, userId: session.user.id },
+  });
+
+  if (!plan) {
+    return { ok: false, error: "Plan not found." };
+  }
+
+  try {
+    await logPlanChange(
+      session.user.id,
+      plan.id,
+      plan.locked ? "plan_unlock" : "plan_lock",
+      plan.locked ? "Unlocked plan" : "Locked plan",
+      reason,
+    );
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+
+  await prisma.plan.update({
+    where: { id: plan.id },
+    data: { locked: !plan.locked },
+  });
+
+  revalidatePath("/plan");
+  return { ok: true, locked: !plan.locked };
 };

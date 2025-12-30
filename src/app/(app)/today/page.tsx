@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { refreshDailyCompletion } from "@/lib/progress";
+import { ensureDebtForMissedDay, getUnresolvedDebt } from "@/lib/debt";
 import { dateKey, startOfDay } from "@/lib/time";
 import TodayClient from "@/app/(app)/today/TodayClient";
 
@@ -13,8 +15,12 @@ export default async function TodayPage() {
 
   const userId = session.user.id;
   const today = startOfDay(new Date());
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
 
-  const [blocks, blockCompletions, daily, plans] = await Promise.all([
+  await ensureDebtForMissedDay(userId, yesterday);
+
+  const [blocks, blockCompletions, daily, plans, failureDay, debts] = await Promise.all([
     prisma.scheduleBlock.findMany({
       where: { userId },
       orderBy: { startTime: "asc" },
@@ -30,6 +36,10 @@ export default async function TodayPage() {
       orderBy: { startDate: "desc" },
       include: { days: { include: { tasks: true } } },
     }),
+    prisma.failureDay.findUnique({
+      where: { userId_date: { userId, date: today } },
+    }),
+    getUnresolvedDebt(userId),
   ]);
 
   const plan = plans.find((item) => {
@@ -42,6 +52,8 @@ export default async function TodayPage() {
     (day) => startOfDay(day.date).getTime() === today.getTime(),
   );
 
+  const completionState = await refreshDailyCompletion(userId, today);
+
   const completedBlockIds = new Set(blockCompletions.map((item) => item.scheduleBlockId));
   const mandatoryBlocks = blocks.filter((block) => block.mandatory);
   const mandatoryTasks = planDay?.tasks.filter((task) => task.mandatory) ?? [];
@@ -50,11 +62,13 @@ export default async function TodayPage() {
   );
   const mandatoryTasksDone = mandatoryTasks.every((task) => task.completedAt);
   const outputReady = Boolean(daily?.outputContent && daily?.outputType);
+  const debtGate = debts.length > 0;
   const doneCount =
     mandatoryBlocks.filter((block) => completedBlockIds.has(block.id)).length +
     mandatoryTasks.filter((task) => task.completedAt).length +
-    (outputReady ? 1 : 0);
-  const requiredCount = mandatoryBlocks.length + mandatoryTasks.length + 1;
+    (outputReady ? 1 : 0) +
+    (debtGate ? 0 : 1);
+  const requiredCount = mandatoryBlocks.length + mandatoryTasks.length + 1 + (debtGate ? 1 : 0);
   const percent = requiredCount === 0 ? 0 : Math.round((doneCount / requiredCount) * 100);
 
   return (
@@ -95,12 +109,21 @@ export default async function TodayPage() {
         }
         outputType={daily?.outputType}
         outputContent={daily?.outputContent}
+        failureDay={Boolean(failureDay)}
+        debts={debts.map((debt) => ({
+          id: debt.id,
+          missedDate: debt.missedDate.toISOString(),
+          reason: debt.reason,
+          createdAt: debt.createdAt.toISOString(),
+        }))}
         progress={{ percent, doneCount, requiredCount }}
         status={{
           mandatoryBlocksDone,
           mandatoryTasksDone,
           outputReady,
-          isComplete: mandatoryBlocksDone && mandatoryTasksDone && outputReady,
+          isComplete: completionState.isComplete,
+          hasDebt: completionState.hasDebt,
+          isFailureDay: completionState.isFailureDay,
         }}
       />
 

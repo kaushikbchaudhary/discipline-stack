@@ -27,6 +27,10 @@ model User {
   dailyCompletions DailyCompletion[]
   weeklyReviews    WeeklyReview[]
   blockCompletions BlockCompletion[]
+  executionDebts   ExecutionDebt[]
+  failureDays      FailureDay[]
+  planChangeLogs   PlanChangeLog[]
+  weeklyInsights   WeeklyInsights[]
 }
 
 model Account {
@@ -103,11 +107,13 @@ model Plan {
   name         String
   startDate    DateTime
   durationDays Int      @default(30)
+  locked       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   days PlanDay[]
+  changeLogs PlanChangeLog[]
 
   @@index([userId])
 }
@@ -164,7 +170,69 @@ model WeeklyReview {
   q2            String
   q3            String
   q4            String
+  stopDoing     String   @default("")
+  resistanceBlock String @default("")
   createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStartDate])
+  @@index([userId, weekStartDate])
+}
+
+model ExecutionDebt {
+  id             String    @id @default(cuid())
+  userId         String
+  missedDate     DateTime
+  reason         String
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolutionType String?
+  resolutionNote String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, missedDate])
+  @@index([userId, resolvedAt])
+}
+
+model FailureDay {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  note      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model PlanChangeLog {
+  id        String   @id @default(cuid())
+  userId    String
+  planId    String
+  changeAt  DateTime @default(now())
+  changeType String
+  details   String
+  reason    String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([userId, changeAt])
+  @@index([planId, changeAt])
+}
+
+model WeeklyInsights {
+  id             String   @id @default(cuid())
+  userId         String
+  weekStartDate  DateTime
+  missedByCategory String
+  mostSkippedHour Int
+  trend          String
+  createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

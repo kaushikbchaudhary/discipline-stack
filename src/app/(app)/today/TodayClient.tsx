@@ -1,11 +1,17 @@
 "use client";
 
-import { useTransition, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
 
 import { minutesToTimeString } from "@/lib/time";
-import { saveOutput, toggleBlockCompletion, toggleTaskCompletion } from "@/app/(app)/today/actions";
+import {
+  markFailureDay,
+  resolveDebt,
+  saveOutput,
+  toggleBlockCompletion,
+  toggleTaskCompletion,
+} from "@/app/(app)/today/actions";
 
 type BlockView = {
   id: string;
@@ -30,6 +36,13 @@ type TodayClientProps = {
   tasks: TaskView[];
   outputType?: string | null;
   outputContent?: string | null;
+  debts: {
+    id: string;
+    missedDate: string;
+    reason: string;
+    createdAt: string;
+  }[];
+  failureDay: boolean;
   progress: {
     percent: number;
     doneCount: number;
@@ -40,6 +53,8 @@ type TodayClientProps = {
     mandatoryTasksDone: boolean;
     outputReady: boolean;
     isComplete: boolean;
+    hasDebt: boolean;
+    isFailureDay: boolean;
   };
 };
 
@@ -48,11 +63,34 @@ export default function TodayClient({
   tasks,
   outputType,
   outputContent,
+  debts,
+  failureDay,
   progress,
   status,
 }: TodayClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [focusMode, setFocusMode] = useState(false);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    if (!focusMode) {
+      return;
+    }
+
+    const warning = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warning);
+    return () => window.removeEventListener("beforeunload", warning);
+  }, [focusMode]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const handleBlockToggle = (blockId: string) => {
     startTransition(async () => {
@@ -92,6 +130,109 @@ export default function TodayClient({
     });
   };
 
+  const handleResolveDebt = (debtId: string, resolutionType: "extra_time" | "extra_output") => {
+    const resolutionNote = window.prompt("Note the action taken to resolve the debt:");
+    if (!resolutionNote) {
+      toast.error("Resolution note is required.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await resolveDebt({ debtId, resolutionType, resolutionNote });
+      if (result.ok) {
+        toast.success("Debt resolved.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not resolve debt.");
+      }
+    });
+  };
+
+  const handleFailureDay = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const result = await markFailureDay(formData);
+      if (result.ok) {
+        toast.success("Failure day logged.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Could not log failure day.");
+      }
+    });
+  };
+
+  const currentBlock = useMemo(() => {
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const active = blocks.find((block) => minutes >= block.startTime && minutes < block.endTime);
+    if (active) {
+      return { block: active, status: "active" as const };
+    }
+    const next = blocks.find((block) => minutes < block.startTime);
+    if (next) {
+      return { block: next, status: "upcoming" as const };
+    }
+    return null;
+  }, [blocks, now]);
+
+  const countdown = useMemo(() => {
+    if (!currentBlock) {
+      return "--:--";
+    }
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const remaining = Math.max(currentBlock.block.endTime - minutes, 0);
+    const hours = Math.floor(remaining / 60).toString().padStart(2, "0");
+    const mins = (remaining % 60).toString().padStart(2, "0");
+    return `${hours}:${mins}`;
+  }, [currentBlock, now]);
+
+  if (focusMode) {
+    return (
+      <section className="card p-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Focus mode</h2>
+          <button
+            type="button"
+            onClick={() => setFocusMode(false)}
+            className="rounded-full border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
+          >
+            Exit
+          </button>
+        </div>
+        <div className="mt-6 space-y-4">
+          {currentBlock ? (
+            <div className="rounded-2xl border border-[color:var(--border)] p-5">
+              <p className="text-sm text-muted">
+                {minutesToTimeString(currentBlock.block.startTime)} -{" "}
+                {minutesToTimeString(currentBlock.block.endTime)}
+              </p>
+              <p className="text-xl font-semibold">{currentBlock.block.name}</p>
+              <p className="mt-2 text-sm text-muted">
+                Status: {currentBlock.status === "active" ? "In progress" : "Upcoming"}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">No active block right now.</p>
+          )}
+          <div className="rounded-2xl bg-[color:var(--bg-alt)] p-4 text-center">
+            <p className="text-xs uppercase tracking-[0.3em] text-muted">Time remaining</p>
+            <p className="text-3xl font-semibold">{countdown}</p>
+          </div>
+          {currentBlock ? (
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => handleBlockToggle(currentBlock.block.id)}
+              className="w-full rounded-xl bg-[color:var(--accent)] px-4 py-3 text-sm font-semibold text-white"
+            >
+              Complete block
+            </button>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="grid gap-8 lg:grid-cols-[1.2fr_1fr]">
       <section className="space-y-6">
@@ -100,16 +241,68 @@ export default function TodayClient({
             <h2 className="text-2xl font-semibold">Today</h2>
             <span className="chip text-muted">{progress.percent}% complete</span>
           </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-muted">
+              {progress.doneCount} of {progress.requiredCount} required steps finished.
+            </span>
+            <button
+              type="button"
+              onClick={() => setFocusMode(true)}
+              className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold"
+            >
+              Enter focus mode
+            </button>
+          </div>
           <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-[color:var(--bg-alt)]">
             <div
               className="h-full rounded-full bg-[color:var(--accent)] transition-all"
               style={{ width: `${progress.percent}%` }}
             />
           </div>
-          <div className="mt-3 text-sm text-muted">
-            {progress.doneCount} of {progress.requiredCount} required steps finished.
-          </div>
         </div>
+
+        {debts.length > 0 ? (
+          <div className="card p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold">Execution debt</h3>
+              <span className="chip text-muted">{debts.length} open</span>
+            </div>
+            <p className="mt-2 text-sm text-muted">
+              Resolve debt before today can be completed.
+            </p>
+            <div className="mt-4 space-y-3">
+              {debts.map((debt) => (
+                <div
+                  key={debt.id}
+                  className="rounded-2xl border border-[color:var(--border)] p-4"
+                >
+                  <p className="text-sm text-muted">
+                    Missed {new Date(debt.missedDate).toDateString()}
+                  </p>
+                  <p className="text-base font-semibold">{debt.reason}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleResolveDebt(debt.id, "extra_time")}
+                      className="rounded-xl bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold text-white"
+                    >
+                      Resolve with +30 min execution
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleResolveDebt(debt.id, "extra_output")}
+                      className="rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs font-semibold"
+                    >
+                      Resolve with additional output
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="card p-6">
           <div className="flex items-center justify-between">
@@ -191,7 +384,7 @@ export default function TodayClient({
         <div className="card p-6">
           <h3 className="text-xl font-semibold">Non-replaceable output</h3>
           <p className="mt-2 text-sm text-muted">
-            Add a text note or a URL to complete today.
+            Use Problem / Decision / Outcome structure, or a real URL.
           </p>
           <form onSubmit={handleOutput} className="mt-4 space-y-3">
             <div className="flex gap-2">
@@ -218,7 +411,7 @@ export default function TodayClient({
               name="outputContent"
               defaultValue={outputContent ?? ""}
               rows={4}
-              placeholder="Paste a link or describe your output."
+              placeholder="Problem: ... Decision: ... Outcome: ..."
               className="w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
             />
             <button
@@ -237,10 +430,38 @@ export default function TodayClient({
             <p>Mandatory blocks: {status.mandatoryBlocksDone ? "Done" : "Pending"}</p>
             <p>Mandatory tasks: {status.mandatoryTasksDone ? "Done" : "Pending"}</p>
             <p>Output attached: {status.outputReady ? "Done" : "Pending"}</p>
+            <p>Execution debt: {status.hasDebt ? "Pending" : "Clear"}</p>
             <p className="pt-2 text-base font-semibold text-black">
-              Day status: {status.isComplete ? "Complete" : "Incomplete"}
+              Day status: {status.isFailureDay ? "Failure day" : status.isComplete ? "Complete" : "Incomplete"}
             </p>
           </div>
+        </div>
+
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold">Failure day</h3>
+          <p className="mt-2 text-sm text-muted">
+            Use sparingly. Failure days do not create execution debt.
+          </p>
+          {failureDay ? (
+            <p className="mt-3 text-sm text-muted">Failure day already logged for today.</p>
+          ) : (
+            <form onSubmit={handleFailureDay} className="mt-4 space-y-3">
+              <textarea
+                name="note"
+                rows={3}
+                required
+                placeholder="Short reflection note"
+                className="w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
+              />
+              <button
+                type="submit"
+                disabled={isPending}
+                className="w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
+              >
+                Mark failure day
+              </button>
+            </form>
+          )}
         </div>
       </section>
     </div>

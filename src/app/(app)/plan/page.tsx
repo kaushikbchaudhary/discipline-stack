@@ -22,6 +22,14 @@ export default async function PlanPage() {
   });
 
   const plan = plans[0];
+  const changeWindowStart = new Date();
+  changeWindowStart.setDate(changeWindowStart.getDate() - 7);
+  const changeCount = plan
+    ? await prisma.planChangeLog.count({
+        where: { planId: plan.id, changeAt: { gte: changeWindowStart } },
+      })
+    : 0;
+  const changeLimit = 5;
 
   if (!plan) {
     return (
@@ -42,9 +50,13 @@ export default async function PlanPage() {
         </p>
       </div>
       <PlanClient
+        planId={plan.id}
         planName={plan.name}
         startDate={plan.startDate.toISOString()}
         pastEditUnlocked={user?.pastEditUnlocked ?? false}
+        locked={plan.locked}
+        changeCount={changeCount}
+        changeLimit={changeLimit}
         days={plan.days.map((day) => ({
           id: day.id,
           dayIndex: day.dayIndex,

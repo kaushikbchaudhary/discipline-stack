@@ -2,6 +2,10 @@
 
 Execution OS is a production-ready Next.js app that turns a daily timetable + 30-day tracker into a forced execution loop. A day completes only when mandatory blocks are done and a non-replaceable output is attached.
 
+## Versioning
+- Current version: 0.2.0
+- Phase docs: `docs/phase/v0.1.0.md`, `docs/phase/v0.2.0.md`
+
 ## Features
 - Onboarding that generates a default timetable from wake time + block durations.
 - Timetable builder with overlap detection and a schedule lock toggle.
@@ -81,3 +85,12 @@ See `prisma/schema.prisma` for full schema.
 - Reminders (email or notifications).
 - Inline charts for monthly trends.
 - Team mode for accountability partners.
+
+## Phase 2 – Execution Reinforcement
+- Execution Debt: missed mandatory blocks create debt that must be resolved before completing a day.
+- Focus Mode: hides future blocks and distractions, shows only the current block and countdown.
+- Output Quality Gate: requires structured text (Problem/Decision/Outcome) or a valid URL.
+- Failure Days: intentional off-days with a reflection note; max 2 per 30-day cycle.
+- Weekly Insights: missed blocks by category, most skipped hour, consistency trend.
+- Plan Lock + Drift Detection: plan locked by default, changes require a reason, warns on frequent edits.
+- Timeline: 30-day execution history with outputs, notes, and debt status.

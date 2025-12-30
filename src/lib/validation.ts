@@ -23,7 +23,35 @@ export const onboardingSchema = z.object({
   reflectionHours: z.coerce.number().min(1).max(4),
 });
 
-export const outputSchema = z.object({
-  outputType: z.enum(["text", "url"]),
-  outputContent: z.string().min(1).max(1000),
-});
+const textOutputSchema = z
+  .string()
+  .min(30, "Text output must be at least 30 characters.")
+  .max(1000)
+  .refine(
+    (value) =>
+      /problem\\s*:/i.test(value) &&
+      /decision\\s*:/i.test(value) &&
+      /outcome\\s*:/i.test(value),
+    "Text output must include Problem:, Decision:, and Outcome: sections.",
+  )
+  .refine(
+    (value) => !/(lorem|placeholder|todo|example|test)/i.test(value),
+    "Output looks like a placeholder.",
+  );
+
+const urlOutputSchema = z
+  .string()
+  .url("Provide a valid URL.")
+  .max(1000)
+  .refine((value) => !/example\\.com/i.test(value), "Output looks like a placeholder.");
+
+export const outputSchema = z.discriminatedUnion("outputType", [
+  z.object({
+    outputType: z.literal("text"),
+    outputContent: textOutputSchema,
+  }),
+  z.object({
+    outputType: z.literal("url"),
+    outputContent: urlOutputSchema,
+  }),
+]);

@@ -10,6 +10,7 @@ import {
   deleteTask,
   regeneratePlan,
   togglePastEdit,
+  togglePlanLock,
   toggleTaskCompletion,
   updateTask,
 } from "@/app/(app)/plan/actions";
@@ -30,13 +31,26 @@ type PlanDayView = {
 };
 
 type PlanClientProps = {
+  planId: string;
   planName: string;
   startDate: string;
   pastEditUnlocked: boolean;
+  locked: boolean;
+  changeCount: number;
+  changeLimit: number;
   days: PlanDayView[];
 };
 
-export default function PlanClient({ planName, startDate, pastEditUnlocked, days }: PlanClientProps) {
+export default function PlanClient({
+  planId,
+  planName,
+  startDate,
+  pastEditUnlocked,
+  locked,
+  changeCount,
+  changeLimit,
+  days,
+}: PlanClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -90,13 +104,33 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
     });
   };
 
+  const handleToggleLock = () => {
+    const reason = window.prompt("Why are you changing the plan lock?");
+    if (!reason) {
+      toast.error("Reason is required.");
+      return;
+    }
+    const formData = new FormData();
+    formData.set("planId", planId);
+    formData.set("reason", reason);
+    startTransition(async () => {
+      const result = await togglePlanLock(formData);
+      if (result.ok) {
+        toast.success(result.locked ? "Plan locked." : "Plan unlocked.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Action failed.");
+      }
+    });
+  };
+
   return (
     <div className="space-y-8">
       <div className="card p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold">{planName}</h2>
-          <p className="text-sm text-muted">Starts {dateKey(new Date(startDate))}</p>
+            <p className="text-sm text-muted">Starts {dateKey(new Date(startDate))}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -105,6 +139,17 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
               className="rounded-full border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
             >
               Regenerate 30-day plan
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleLock}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                locked
+                  ? "bg-[color:var(--accent)] text-white"
+                  : "border border-[color:var(--border)] text-black"
+              }`}
+            >
+              {locked ? "Plan locked" : "Plan unlocked"}
             </button>
             <button
               type="button"
@@ -119,6 +164,16 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
             </button>
           </div>
         </div>
+        {changeCount >= changeLimit ? (
+          <div className="mt-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--bg-alt)] px-4 py-3 text-sm text-muted">
+            Drift warning: {changeCount} plan changes in the last 7 days.
+          </div>
+        ) : null}
+        {locked ? (
+          <p className="mt-3 text-sm text-muted">
+            Plan is locked. Unlock to edit tasks or add new ones.
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-4">
@@ -164,11 +219,13 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
                     <input
                       name="title"
                       defaultValue={task.title}
+                      disabled={locked}
                       className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
                     />
                     <select
                       name="category"
                       defaultValue={task.category}
+                      disabled={locked}
                       className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
                     >
                       {categories.map((cat) => (
@@ -178,14 +235,36 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
                       ))}
                     </select>
                     <label className="flex items-center gap-2 text-sm">
-                      <input name="mandatory" type="checkbox" defaultChecked={task.mandatory} />
+                      <input
+                        name="mandatory"
+                        type="checkbox"
+                        defaultChecked={task.mandatory}
+                        disabled={locked}
+                      />
                       Mandatory
                     </label>
+                    <input
+                      name="reason"
+                      placeholder="Reason for change"
+                      required
+                      disabled={locked}
+                      className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
+                    />
                     <button
                       type="button"
                       onClick={() => {
+                        if (locked) {
+                          toast.error("Plan is locked.");
+                          return;
+                        }
+                        const reason = window.prompt("Reason for deleting this task:");
+                        if (!reason) {
+                          toast.error("Reason is required.");
+                          return;
+                        }
                         const formData = new FormData();
                         formData.set("id", task.id);
+                        formData.set("reason", reason);
                         startTransition(() => runAction(deleteTask, formData, "Task deleted."));
                       }}
                       className="rounded-xl border border-[color:var(--border)] px-3 py-2 text-sm"
@@ -194,7 +273,7 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
                     </button>
                     <button
                       type="submit"
-                      disabled={isPending}
+                      disabled={isPending || locked}
                       className="rounded-xl bg-[color:var(--accent)] px-3 py-2 text-sm font-semibold text-white"
                     >
                       Save task
@@ -217,11 +296,13 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
                   <input
                     name="title"
                     required
+                    disabled={locked}
                     placeholder="New task"
                     className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
                   />
                   <select
                     name="category"
+                    disabled={locked}
                     className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
                   >
                     {categories.map((cat) => (
@@ -231,12 +312,19 @@ export default function PlanClient({ planName, startDate, pastEditUnlocked, days
                     ))}
                   </select>
                   <label className="flex items-center gap-2 text-sm">
-                    <input name="mandatory" type="checkbox" value="true" />
+                    <input name="mandatory" type="checkbox" value="true" disabled={locked} />
                     Mandatory
                   </label>
+                  <input
+                    name="reason"
+                    placeholder="Reason for change"
+                    required
+                    disabled={locked}
+                    className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
+                  />
                   <button
                     type="submit"
-                    disabled={isPending}
+                    disabled={isPending || locked}
                     className="rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white"
                   >
                     Add task

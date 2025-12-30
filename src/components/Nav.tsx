@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 
 const links = [
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/today", label: "Today" },
   { href: "/timetable", label: "Timetable" },
   { href: "/plan", label: "Plan" },

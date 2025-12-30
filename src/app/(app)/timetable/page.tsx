@@ -3,17 +3,11 @@ import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import TimetableClient from "@/app/(app)/timetable/TimetableClient";
-import { getQuietWeek } from "@/lib/quiet";
 
 export default async function TimetablePage() {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
     redirect("/login");
-  }
-
-  const quietWeek = await getQuietWeek(session.user.id);
-  if (quietWeek) {
-    redirect("/today");
   }
 
   const [blocks, user] = await Promise.all([

@@ -4,33 +4,85 @@ import { startOfDay } from "@/lib/time";
 
 export const DEFAULT_ONBOARDING: OnboardingInput = {
   wakeTime: "06:00",
-  gymHours: 2,
-  choresHours: 2,
-  incomeHours: 3,
-  nonReplaceableHours: 2,
-  reflectionHours: 1,
+  dailyCapacityHours: 4,
+  healthHours: 2,
+  recoveryHours: 2,
 };
 
 export const createDefaultPlan = async (userId: string, startDate = new Date()) => {
   const planDays = buildDefaultPlan(startOfDay(startDate));
 
-  return prisma.plan.create({
+  const plan = await prisma.plan.create({
     data: {
       userId,
-      name: "Execution Sprint",
+      name: "Execution Plan",
       startDate: startOfDay(startDate),
       durationDays: planDays.length,
-      days: {
-        create: planDays.map((day) => ({
-          dayIndex: day.dayIndex,
-          date: day.date,
-          tasks: {
-            create: day.tasks,
-          },
-        })),
-      },
     },
   });
+
+  const tasks = planDays.flatMap((day) =>
+    day.tasks.map((task) => ({
+      planId: plan.id,
+      title: task.title,
+      description: task.description,
+      date: task.date,
+      startTime: task.startTime ?? null,
+      endTime: task.endTime ?? null,
+      durationMinutes: task.durationMinutes ?? null,
+      completed: task.completed ?? false,
+      incompleteReason: task.incompleteReason ?? null,
+    })),
+  );
+
+  if (tasks.length > 0) {
+    await prisma.task.createMany({ data: tasks });
+  }
+
+  return plan;
+};
+
+export const createDefaultGoal = async (userId: string) => {
+  const goal = await prisma.goal.create({
+    data: {
+      userId,
+      title: "Primary Goal",
+      description: "Define your main outcome.",
+      goalType: "CUSTOM",
+      startDate: startOfDay(new Date()),
+      isActive: true,
+    },
+  });
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { activeGoalId: goal.id },
+  });
+
+  return goal;
+};
+
+export const createGoalFromOnboarding = async (
+  userId: string,
+  input: { goalTitle: string; goalDescription?: string; goalType: string },
+) => {
+  const goal = await prisma.goal.create({
+    data: {
+      userId,
+      title: input.goalTitle,
+      description: input.goalDescription?.trim() || null,
+      goalType: input.goalType as any,
+      startDate: startOfDay(new Date()),
+      isActive: true,
+    },
+  });
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { activeGoalId: goal.id },
+  });
+
+  return goal;
 };
 
 export const createScheduleFromOnboarding = async (

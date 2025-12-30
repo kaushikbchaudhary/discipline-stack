@@ -55,9 +55,9 @@ export default function ExportClient() {
       </div>
 
       <div className="card p-6">
-        <h2 className="text-xl font-semibold">Export outputs</h2>
+        <h2 className="text-xl font-semibold">Export goal artifacts</h2>
         <p className="mt-2 text-sm text-muted">
-          Export non-replaceable outputs as Markdown or a weekly PDF summary.
+          Export goal artifacts as Markdown or a weekly PDF summary.
         </p>
         <form onSubmit={handleOutputExport} className="mt-4 grid gap-3 md:grid-cols-3">
           <input
@@ -84,7 +84,7 @@ export default function ExportClient() {
             type="submit"
             className="md:col-span-3 rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
           >
-            Export outputs
+            Export artifacts
           </button>
         </form>
       </div>

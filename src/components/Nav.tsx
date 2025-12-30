@@ -7,23 +7,18 @@ import { signOut } from "next-auth/react";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/today", label: "Today" },
-  { href: "/timetable", label: "Timetable" },
   { href: "/plan", label: "Plan" },
-  { href: "/progress", label: "Progress" },
-  { href: "/timeline", label: "Timeline" },
+  { href: "/plan/import", label: "Plan Import" },
   { href: "/review", label: "Review" },
-  { href: "/export", label: "Export" },
 ];
 
 export default function Nav({
   userName,
-  quietMode,
 }: {
   userName?: string | null;
-  quietMode?: boolean;
 }) {
   const pathname = usePathname();
-  const visibleLinks = quietMode ? links.filter((link) => link.href === "/today") : links;
+  const visibleLinks = links;
 
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--surface)]/80 backdrop-blur">

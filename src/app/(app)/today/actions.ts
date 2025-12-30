@@ -1,67 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { mkdir, writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
+import path from "path";
 
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { outputSchema } from "@/lib/validation";
 import { refreshDailyCompletion } from "@/lib/progress";
 import { startOfDay } from "@/lib/time";
-import { resolveDebt as resolveDebtRecord } from "@/lib/debt";
-import { getDailyWinConfig, setDailyWinConfig, upsertDailyWin } from "@/lib/dailyWin";
-import { canEnableQuietWeek, enableQuietWeek } from "@/lib/quiet";
-
-export const toggleBlockCompletion = async (blockId: string) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const block = await prisma.scheduleBlock.findFirst({
-    where: { id: blockId, userId: session.user.id },
-  });
-
-  if (!block) {
-    return { ok: false, error: "Block not found." };
-  }
-
-  const date = startOfDay(new Date());
-  const existing = await prisma.blockCompletion.findUnique({
-    where: { userId_scheduleBlockId_date: { userId: session.user.id, scheduleBlockId: blockId, date } },
-  });
-
-  if (existing) {
-    await prisma.blockCompletion.delete({ where: { id: existing.id } });
-  } else {
-    const nextAction = await prisma.nextAction.findUnique({
-      where: {
-        userId_blockId_date: {
-          userId: session.user.id,
-          blockId,
-          date,
-        },
-      },
-    });
-    if (!nextAction) {
-      return { ok: false, error: "Next action required before starting this block." };
-    }
-    await prisma.blockCompletion.create({
-      data: { userId: session.user.id, scheduleBlockId: blockId, date },
-    });
-
-    const winConfig = await getDailyWinConfig(session.user.id);
-    if (
-      (winConfig.type === "block" || winConfig.type === "either") &&
-      winConfig.blockId === blockId
-    ) {
-      await upsertDailyWin(session.user.id, date, `block:${blockId}`);
-    }
-  }
-
-  await refreshDailyCompletion(session.user.id, date);
-  revalidatePath("/today");
-  return { ok: true };
-};
 
 export const toggleTaskCompletion = async (taskId: string) => {
   const session = await getServerAuthSession();
@@ -72,13 +20,8 @@ export const toggleTaskCompletion = async (taskId: string) => {
   const task = await prisma.task.findFirst({
     where: {
       id: taskId,
-      planDay: {
-        plan: {
-          userId: session.user.id,
-        },
-      },
+      plan: { userId: session.user.id },
     },
-    include: { planDay: true },
   });
 
   if (!task) {
@@ -87,10 +30,10 @@ export const toggleTaskCompletion = async (taskId: string) => {
 
   await prisma.task.update({
     where: { id: task.id },
-    data: { completedAt: task.completedAt ? null : new Date() },
+    data: { completed: !task.completed },
   });
 
-  await refreshDailyCompletion(session.user.id, task.planDay.date);
+  await refreshDailyCompletion(session.user.id, task.date);
   revalidatePath("/today");
   return { ok: true };
 };
@@ -107,10 +50,19 @@ export const saveOutput = async (formData: FormData) => {
   });
 
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message || "Add a valid output entry." };
+    return { ok: false, error: parsed.error.issues[0]?.message || "Add a valid artifact entry." };
   }
 
   const date = startOfDay(new Date());
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { activeGoalId: true },
+  });
+
+  if (!user?.activeGoalId) {
+    return { ok: false, error: "Set a primary goal before adding artifacts." };
+  }
 
   await prisma.dailyCompletion.upsert({
     where: { userId_date: { userId: session.user.id, date } },
@@ -126,126 +78,15 @@ export const saveOutput = async (formData: FormData) => {
     },
   });
 
-  const winConfig = await getDailyWinConfig(session.user.id);
-  if (winConfig.type === "output" || winConfig.type === "either") {
-    await upsertDailyWin(session.user.id, date, "output");
-  }
-
-  await refreshDailyCompletion(session.user.id, date);
-  revalidatePath("/today");
-  return { ok: true };
-};
-
-export const saveDailyWinConfig = async (formData: FormData) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const type = String(formData.get("winType"));
-  const blockId = String(formData.get("blockId") ?? "");
-
-  if (type !== "output" && type !== "block" && type !== "either") {
-    return { ok: false, error: "Invalid daily win selection." };
-  }
-
-  if ((type === "block" || type === "either") && !blockId) {
-    return { ok: false, error: "Select a block for Daily Win." };
-  }
-
-  await setDailyWinConfig(session.user.id, {
-    type: type as "block" | "output" | "either",
-    blockId: type === "block" || type === "either" ? blockId : null,
-  });
-
-  revalidatePath("/today");
-  return { ok: true };
-};
-
-export const saveNextAction = async (formData: FormData) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const blockId = String(formData.get("blockId") ?? "");
-  const text = String(formData.get("text") ?? "").trim();
-
-  if (!blockId) {
-    return { ok: false, error: "Block is required." };
-  }
-
-  if (!text || text.length > 120) {
-    return { ok: false, error: "Next action must be 1-120 characters." };
-  }
-
-  const date = startOfDay(new Date());
-
-  const block = await prisma.scheduleBlock.findFirst({
-    where: { id: blockId, userId: session.user.id },
-  });
-
-  if (!block) {
-    return { ok: false, error: "Block not found." };
-  }
-
-  const now = new Date();
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  if (minutes >= block.startTime) {
-    return { ok: false, error: "Next action can only be edited before block start." };
-  }
-
-  await prisma.nextAction.upsert({
-    where: { userId_blockId_date: { userId: session.user.id, blockId, date } },
-    create: { userId: session.user.id, blockId, date, text },
-    update: { text },
-  });
-
-  revalidatePath("/today");
-  return { ok: true };
-};
-
-export const logResistance = async (formData: FormData) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const blockId = String(formData.get("blockId") ?? "");
-  const reason = String(formData.get("reason") ?? "");
-  const date = startOfDay(new Date());
-
-  if (!blockId) {
-    return { ok: false, error: "Block is required." };
-  }
-
-  const allowed = [
-    "TOO_TIRED",
-    "AVOIDANCE",
-    "UNCLEAR_NEXT_STEP",
-    "EXTERNAL_INTERRUPTION",
-    "OVERPLANNED",
-  ];
-
-  if (!allowed.includes(reason)) {
-    return { ok: false, error: "Select a valid reason." };
-  }
-
-  const block = await prisma.scheduleBlock.findFirst({
-    where: { id: blockId, userId: session.user.id },
-  });
-  if (!block?.mandatory) {
-    return { ok: false, error: "Resistance logging is only for mandatory blocks." };
-  }
-
-  await prisma.blockCompletion.deleteMany({
-    where: { userId: session.user.id, scheduleBlockId: blockId, date },
-  });
-
-  await prisma.blockResistance.upsert({
-    where: { userId_blockId_date: { userId: session.user.id, blockId, date } },
-    create: { userId: session.user.id, blockId, date, reason: reason as any },
-    update: { reason: reason as any },
+  await prisma.goalArtifact.create({
+    data: {
+      userId: session.user.id,
+      goalId: user.activeGoalId,
+      blockId: null,
+      date,
+      type: parsed.data.outputType,
+      content: parsed.data.outputContent,
+    },
   });
 
   await refreshDailyCompletion(session.user.id, date);
@@ -253,98 +94,71 @@ export const logResistance = async (formData: FormData) => {
   return { ok: true };
 };
 
-export const toggleQuietWeek = async () => {
+export const saveArtifactFile = async (formData: FormData) => {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
     return { ok: false, error: "Not authenticated." };
   }
 
-  const canEnable = await canEnableQuietWeek(session.user.id);
-  if (!canEnable) {
-    return { ok: false, error: "Quiet Mode can be enabled once every 2 weeks." };
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "Select a file to upload." };
   }
 
-  await enableQuietWeek(session.user.id);
+  if (file.size === 0) {
+    return { ok: false, error: "File is empty." };
+  }
+
+  const maxBytes = 20 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return { ok: false, error: "File exceeds 20MB limit." };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { activeGoalId: true },
+  });
+
+  if (!user?.activeGoalId) {
+    return { ok: false, error: "Set a primary goal before adding artifacts." };
+  }
+
+  const date = startOfDay(new Date());
+  const uploadDir = path.join(process.cwd(), "public", "uploads");
+  await mkdir(uploadDir, { recursive: true });
+  const safeName = `${randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const filePath = path.join(uploadDir, safeName);
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await writeFile(filePath, buffer);
+  const fileUrl = `/uploads/${safeName}`;
+
+  await prisma.dailyCompletion.upsert({
+    where: { userId_date: { userId: session.user.id, date } },
+    create: {
+      userId: session.user.id,
+      date,
+      outputType: "FILE",
+      outputContent: file.name,
+    },
+    update: {
+      outputType: "FILE",
+      outputContent: file.name,
+    },
+  });
+
+  await prisma.goalArtifact.create({
+    data: {
+      userId: session.user.id,
+      goalId: user.activeGoalId,
+      blockId: null,
+      date,
+      type: "FILE",
+      fileUrl,
+      content: file.name,
+    },
+  });
+
+  await refreshDailyCompletion(session.user.id, date);
   revalidatePath("/today");
-  return { ok: true };
-};
-
-export const resolveDebt = async (payload: {
-  debtId: string;
-  resolutionType: "extra_time" | "extra_output";
-  resolutionNote: string;
-}) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  if (!payload.resolutionNote.trim()) {
-    return { ok: false, error: "Resolution note is required." };
-  }
-
-  try {
-    await resolveDebtRecord(
-      session.user.id,
-      payload.debtId,
-      payload.resolutionType,
-      payload.resolutionNote,
-    );
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
-  await refreshDailyCompletion(session.user.id, startOfDay(new Date()));
-  revalidatePath("/today");
-  return { ok: true };
-};
-
-export const markFailureDay = async (formData: FormData) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const note = String(formData.get("note") ?? "").trim();
-  if (!note) {
-    return { ok: false, error: "Failure day note is required." };
-  }
-
-  const today = startOfDay(new Date());
-
-  const existing = await prisma.failureDay.findUnique({
-    where: { userId_date: { userId: session.user.id, date: today } },
-  });
-
-  if (existing) {
-    return { ok: false, error: "Failure day already logged for today." };
-  }
-
-  const plan = await prisma.plan.findFirst({
-    where: { userId: session.user.id },
-    orderBy: { startDate: "desc" },
-  });
-
-  if (plan) {
-    const end = new Date(plan.startDate);
-    end.setDate(end.getDate() + plan.durationDays);
-    const failureCount = await prisma.failureDay.count({
-      where: { userId: session.user.id, date: { gte: plan.startDate, lt: end } },
-    });
-    if (failureCount >= 2) {
-      return { ok: false, error: "Failure day limit reached for this cycle." };
-    }
-  }
-
-  await prisma.failureDay.create({
-    data: { userId: session.user.id, date: today, note },
-  });
-
-  await prisma.executionDebt.deleteMany({
-    where: { userId: session.user.id, missedDate: today },
-  });
-
-  await refreshDailyCompletion(session.user.id, today);
-  revalidatePath("/today");
-  return { ok: true };
+  return { ok: true, fileUrl };
 };

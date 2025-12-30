@@ -5,9 +5,10 @@ export default function OnboardingPage() {
     <div className="mx-auto max-w-3xl">
       <div className="space-y-4">
         <p className="text-sm uppercase tracking-[0.3em] text-muted">Onboarding</p>
-        <h1 className="text-3xl font-semibold">Build your default timetable</h1>
+        <h1 className="text-3xl font-semibold">Define your primary goal</h1>
         <p className="text-sm text-muted">
-          Set daily block durations. We generate a schedule you can edit later.
+          Set your goal, daily capacity, and non-negotiables. We generate a default
+          structure you can edit later.
         </p>
       </div>
       <div className="mt-6">

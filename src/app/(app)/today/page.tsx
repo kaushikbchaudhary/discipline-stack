@@ -3,9 +3,6 @@ import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshDailyCompletion } from "@/lib/progress";
-import { ensureDebtForMissedDay, getUnresolvedDebt } from "@/lib/debt";
-import { getDailyWin, getDailyWinConfig } from "@/lib/dailyWin";
-import { getQuietWeek } from "@/lib/quiet";
 import { dateKey, startOfDay } from "@/lib/time";
 import TodayClient from "@/app/(app)/today/TodayClient";
 
@@ -17,157 +14,71 @@ export default async function TodayPage() {
 
   const userId = session.user.id;
   const today = startOfDay(new Date());
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
 
-  await ensureDebtForMissedDay(userId, yesterday);
-
-  const [
-    blocks,
-    blockCompletions,
-    daily,
-    plans,
-    failureDay,
-    debts,
-    dailyWin,
-    winConfig,
-    nextActions,
-    quietWeek,
-  ] = await Promise.all([
-    prisma.scheduleBlock.findMany({
-      where: { userId },
-      orderBy: { startTime: "asc" },
-    }),
-    prisma.blockCompletion.findMany({
-      where: { userId, date: today },
-    }),
+  const [daily, plans] = await Promise.all([
     prisma.dailyCompletion.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.plan.findMany({
       where: { userId },
-      orderBy: { startDate: "desc" },
-      include: { days: { include: { tasks: true } } },
+      orderBy: { createdAt: "desc" },
+      include: { tasks: true },
     }),
-    prisma.failureDay.findUnique({
-      where: { userId_date: { userId, date: today } },
-    }),
-    getUnresolvedDebt(userId),
-    getDailyWin(userId, today),
-    getDailyWinConfig(userId),
-    prisma.nextAction.findMany({ where: { userId, date: today } }),
-    getQuietWeek(userId),
   ]);
 
-  const plan = plans.find((item) => {
-    const start = startOfDay(item.startDate).getTime();
-    const end = start + item.durationDays * 24 * 60 * 60 * 1000;
-    return today.getTime() >= start && today.getTime() < end;
-  });
-
-  const planDay = plan?.days.find(
-    (day) => startOfDay(day.date).getTime() === today.getTime(),
-  );
+  const plan =
+    plans.find((item) =>
+      item.tasks.some((task) => startOfDay(task.date).getTime() === today.getTime()),
+    ) ?? plans[0];
 
   const completionState = await refreshDailyCompletion(userId, today);
 
-  const completedBlockIds = new Set(blockCompletions.map((item) => item.scheduleBlockId));
-  const mandatoryBlocks = blocks.filter((block) => block.mandatory);
-  const mandatoryTasks = planDay?.tasks.filter((task) => task.mandatory) ?? [];
-  const mandatoryBlocksDone = mandatoryBlocks.every((block) =>
-    completedBlockIds.has(block.id),
-  );
-  const mandatoryTasksDone = mandatoryTasks.every((task) => task.completedAt);
-  const outputReady = Boolean(daily?.outputContent && daily?.outputType);
-  const debtGate = debts.length > 0;
-  const doneCount =
-    mandatoryBlocks.filter((block) => completedBlockIds.has(block.id)).length +
-    mandatoryTasks.filter((task) => task.completedAt).length +
-    (outputReady ? 1 : 0) +
-    (debtGate ? 0 : 1);
-  const requiredCount = mandatoryBlocks.length + mandatoryTasks.length + 1 + (debtGate ? 1 : 0);
-  const percent = requiredCount === 0 ? 0 : Math.round((doneCount / requiredCount) * 100);
-  const dailyWinSatisfied = completionState.hasDailyWin || Boolean(dailyWin);
-  const isSalvaged =
-    !completionState.isComplete &&
-    !completionState.isFailureDay &&
-    !completionState.hasDebt &&
-    dailyWinSatisfied;
+  const tasks =
+    plan?.tasks
+      .filter((task) => startOfDay(task.date).getTime() === today.getTime())
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description ?? "",
+        startTime: task.startTime ?? null,
+        endTime: task.endTime ?? null,
+        durationMinutes: task.durationMinutes ?? null,
+        completed: task.completed,
+      })) ?? [];
+
+  const doneTasks = tasks.filter((task) => task.completed).length;
+  const outputReady = Boolean(daily?.outputType && daily?.outputContent);
+  const totalCount = tasks.length + 1;
+  const doneCount = doneTasks + (outputReady ? 1 : 0);
+  const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-muted">Today view</p>
-          <h1 className="text-3xl font-semibold">{dateKey(today)}</h1>
-          <p className="text-sm text-muted">
-            {blocks.length} blocks scheduled · {planDay?.tasks.length ?? 0} tasks
-          </p>
-        </div>
-        <div className="card-muted rounded-2xl border border-[color:var(--border)] px-4 py-3 text-sm text-muted">
-          Required: mandatory blocks + non-negotiables + output
-        </div>
+      <div>
+        <p className="text-sm uppercase tracking-[0.3em] text-muted">Today</p>
+        <h1 className="text-3xl font-semibold">{dateKey(today)}</h1>
+        <p className="text-sm text-muted">{tasks.length} tasks planned</p>
       </div>
 
       <TodayClient
-        blocks={blocks.map((block) => ({
-          id: block.id,
-          name: block.name,
-          startTime: block.startTime,
-          endTime: block.endTime,
-          category: block.category,
-          mandatory: block.mandatory,
-          completed: completedBlockIds.has(block.id),
-        }))}
-        tasks={
-          planDay?.tasks
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((task) => ({
-              id: task.id,
-              title: task.title,
-              category: task.category,
-              mandatory: task.mandatory,
-              completed: Boolean(task.completedAt),
-            })) ?? []
-        }
+        tasks={tasks}
         outputType={daily?.outputType}
         outputContent={daily?.outputContent}
-        dailyWinConfig={winConfig}
-        nextActions={Object.fromEntries(
-          nextActions.map((item) => [item.blockId, item.text]),
-        )}
-        quietMode={Boolean(quietWeek)}
-        failureDay={Boolean(failureDay)}
-        debts={debts.map((debt) => ({
-          id: debt.id,
-          missedDate: debt.missedDate.toISOString(),
-          reason: debt.reason,
-          createdAt: debt.createdAt.toISOString(),
-        }))}
-        progress={{ percent, doneCount, requiredCount }}
-        status={{
-          mandatoryBlocksDone,
-          mandatoryTasksDone,
-          outputReady,
-          isComplete: completionState.isComplete,
-          hasDebt: completionState.hasDebt,
-          isFailureDay: completionState.isFailureDay,
-          isSalvaged,
-        }}
-        dailyWinSatisfied={dailyWinSatisfied}
+        progress={{ percent, doneCount, totalCount }}
+        status={{ outputReady, isComplete: completionState.isComplete }}
       />
 
-      {blocks.length === 0 ? (
+      {tasks.length === 0 ? (
         <div className="card p-6">
-          <h3 className="text-xl font-semibold">No timetable yet</h3>
+          <h3 className="text-xl font-semibold">No tasks for today</h3>
           <p className="mt-2 text-sm text-muted">
-            Add your schedule or run onboarding to generate a default timetable.
+            Import or build your plan to see daily tasks here.
           </p>
           <a
-            href="/onboarding"
-            className="mt-4 inline-flex rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
+            href="/plan/import"
+            className="mt-4 inline-flex rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
           >
-            Start onboarding
+            Import plan
           </a>
         </div>
       ) : null}

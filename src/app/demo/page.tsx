@@ -30,11 +30,9 @@ type DemoState = {
 const defaultState = (): DemoState => {
   const blocks = buildDefaultSchedule({
     wakeTime: "06:00",
-    gymHours: 2,
-    choresHours: 2,
-    incomeHours: 3,
-    nonReplaceableHours: 2,
-    reflectionHours: 1,
+    dailyCapacityHours: 4,
+    healthHours: 2,
+    recoveryHours: 2,
   }).map((block) => ({
     id: crypto.randomUUID(),
     ...block,
@@ -207,7 +205,7 @@ export default function DemoPage() {
             </div>
 
             <div className="card p-6">
-              <h3 className="text-xl font-semibold">Output</h3>
+              <h3 className="text-xl font-semibold">Artifact</h3>
               <textarea
                 value={state.outputContent}
                 onChange={(event) =>
@@ -216,7 +214,7 @@ export default function DemoPage() {
                   )
                 }
                 rows={4}
-                placeholder="Paste a link or describe output"
+                placeholder="Paste a link or describe the artifact"
                 className="mt-3 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
               />
             </div>

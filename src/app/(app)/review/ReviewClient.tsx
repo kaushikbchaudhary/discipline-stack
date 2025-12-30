@@ -14,17 +14,6 @@ type ReviewClientProps = {
   stopDoing?: string | null;
   resistanceBlock?: string | null;
   locked: boolean;
-  insights: {
-    missedByCategory: Record<string, number>;
-    mostSkippedHour: number;
-    trend: string;
-    mostSkippedReason: string;
-  };
-  timeReality: {
-    plannedMinutes: number;
-    executedMinutes: number;
-    recoveredMinutes: number;
-  };
 };
 
 export default function ReviewClient({
@@ -35,8 +24,6 @@ export default function ReviewClient({
   stopDoing,
   resistanceBlock,
   locked,
-  insights,
-  timeReality,
 }: ReviewClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -57,43 +44,9 @@ export default function ReviewClient({
 
   return (
     <div className="space-y-6">
-      <div className="card p-6">
-        <h2 className="text-xl font-semibold">Weekly insights</h2>
-        <div className="mt-3 space-y-2 text-sm text-muted">
-          <p>Consistency trend: {insights.trend}</p>
-          <p>Most skipped hour: {String(insights.mostSkippedHour).padStart(2, "0")}:00</p>
-          <p>
-            Most skipped due to: {insights.mostSkippedReason || "Not enough data"}
-          </p>
-          <div>
-            Missed blocks by category:
-            <div className="mt-2 grid gap-2 md:grid-cols-2">
-              {Object.entries(insights.missedByCategory).length === 0 ? (
-                <span className="chip text-muted">No missed mandatory blocks</span>
-              ) : (
-                Object.entries(insights.missedByCategory).map(([category, count]) => (
-                  <span key={category} className="chip text-muted">
-                    {category}: {count}
-                  </span>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card p-6">
-        <h2 className="text-xl font-semibold">Time reality check</h2>
-        <div className="mt-3 space-y-2 text-sm text-muted">
-          <p>Planned time: {timeReality.plannedMinutes} minutes</p>
-          <p>Executed time: {timeReality.executedMinutes} minutes</p>
-          <p>Recovered time: {timeReality.recoveredMinutes} minutes</p>
-        </div>
-      </div>
-
       <form onSubmit={handleSave} className="card space-y-4 p-6">
       <div>
-        <label className="text-sm font-medium">What moved me closer to income?</label>
+        <label className="text-sm font-medium">What moved me closer to the goal?</label>
         <textarea
           name="q1"
           defaultValue={q1 ?? ""}
@@ -103,7 +56,7 @@ export default function ReviewClient({
         />
       </div>
       <div>
-        <label className="text-sm font-medium">What output did I create?</label>
+        <label className="text-sm font-medium">What artifact did I create?</label>
         <textarea
           name="q2"
           defaultValue={q2 ?? ""}

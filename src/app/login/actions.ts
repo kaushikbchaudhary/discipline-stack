@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validation";
-import { createDefaultPlan } from "@/lib/setup";
+import { createDefaultGoal } from "@/lib/setup";
 
 export const registerUser = async (_prevState: unknown, formData: FormData) => {
   const parsed = registerSchema.safeParse({
@@ -35,7 +35,7 @@ export const registerUser = async (_prevState: unknown, formData: FormData) => {
     },
   });
 
-  await createDefaultPlan(user.id, new Date());
+  await createDefaultGoal(user.id);
 
   return { ok: true };
 };

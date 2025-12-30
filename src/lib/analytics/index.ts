@@ -16,61 +16,64 @@ const toKey = (date: Date) => dateKey(startOfDay(date));
 export const getDailyCompletionStats = unstable_cache(
   async (userId: string, days = 30) => {
     const { start, end } = buildDateRange(days);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { activeGoalId: true },
+    });
 
-    const [mandatoryBlocks, completions, dailyCompletions, failureDays, dailyWins] = await Promise.all([
-      prisma.scheduleBlock.findMany({ where: { userId, mandatory: true } }),
-      prisma.blockCompletion.findMany({
-        where: { userId, date: { gte: start, lt: end } },
+    const [tasks, dailyCompletions, artifacts] = await Promise.all([
+      prisma.task.findMany({
+        where: { plan: { userId }, date: { gte: start, lt: end } },
       }),
       prisma.dailyCompletion.findMany({
         where: { userId, date: { gte: start, lt: end } },
       }),
-      prisma.failureDay.findMany({
-        where: { userId, date: { gte: start, lt: end } },
-      }),
-      prisma.dailyWin.findMany({
-        where: { userId, date: { gte: start, lt: end } },
+      prisma.goalArtifact.findMany({
+        where: {
+          userId,
+          goalId: user?.activeGoalId ?? undefined,
+          date: { gte: start, lt: end },
+        },
+        orderBy: { createdAt: "desc" },
       }),
     ]);
 
-    const completionMap = new Map<string, Set<string>>();
-    completions.forEach((item) => {
-      const key = toKey(item.date);
-      const set = completionMap.get(key) ?? new Set<string>();
-      set.add(item.scheduleBlockId);
-      completionMap.set(key, set);
+    const taskMap = new Map<string, { total: number; completed: number }>();
+    tasks.forEach((task) => {
+      const key = toKey(task.date);
+      const entry = taskMap.get(key) ?? { total: 0, completed: 0 };
+      entry.total += 1;
+      if (task.completed) {
+        entry.completed += 1;
+      }
+      taskMap.set(key, entry);
     });
 
     const dailyMap = new Map(dailyCompletions.map((item) => [toKey(item.date), item]));
-    const failureMap = new Set(failureDays.map((item) => toKey(item.date)));
-    const winMap = new Set(dailyWins.map((item) => toKey(item.date)));
+    const artifactMap = new Map<string, string>();
+    artifacts.forEach((artifact) => {
+      const key = toKey(artifact.date);
+      if (!artifactMap.has(key)) {
+        artifactMap.set(key, artifact.content ?? artifact.fileUrl ?? "");
+      }
+    });
 
     const stats = Array.from({ length: days }).map((_, index) => {
       const date = addDays(start, index);
       const key = toKey(date);
       const daily = dailyMap.get(key);
-      const completedSet = completionMap.get(key) ?? new Set<string>();
-      const mandatoryTotalCount = mandatoryBlocks.length;
-      const mandatoryCompletedCount = mandatoryBlocks.filter((block) =>
-        completedSet.has(block.id),
-      ).length;
-      const isFailure = failureMap.has(key);
+      const totals = taskMap.get(key) ?? { total: 0, completed: 0 };
       const isComplete = Boolean(daily?.completedAt);
-      const status = isFailure
-        ? "failure"
-        : isComplete
-          ? "complete"
-          : winMap.has(key)
-            ? "salvaged"
-            : "incomplete";
+      const status = isComplete ? "complete" : "incomplete";
 
       return {
         date,
         key,
         status,
-        mandatoryCompletedCount,
-        mandatoryTotalCount,
-        outputSummary: daily?.outputContent?.slice(0, 120) ?? "",
+        mandatoryCompletedCount: totals.completed,
+        mandatoryTotalCount: totals.total,
+        outputSummary:
+          artifactMap.get(key)?.slice(0, 120) ?? daily?.outputContent?.slice(0, 120) ?? "",
       };
     });
 
@@ -171,7 +174,7 @@ const classifyDepth = (outputType: string | null, content: string | null) => {
   if (!content) {
     return "shallow";
   }
-  if (outputType === "url") {
+  if (outputType === "URL" || outputType === "FILE") {
     return "standard";
   }
   const length = content.length;
@@ -189,10 +192,15 @@ export const getOutputQualityStats = unstable_cache(
     const end = addDays(startOfDay(new Date()), 1);
     const start = addDays(end, -(weeks * 7));
 
-    const outputs = await prisma.dailyCompletion.findMany({
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { activeGoalId: true },
+    });
+
+    const outputs = await prisma.goalArtifact.findMany({
       where: {
         userId,
-        outputContent: { not: null },
+        goalId: user?.activeGoalId ?? undefined,
         date: { gte: start, lt: end },
       },
       orderBy: { date: "desc" },
@@ -205,7 +213,7 @@ export const getOutputQualityStats = unstable_cache(
       const key = toKey(weekStart);
       const entry =
         weekMap.get(key) ?? { weekStart, shallow: 0, standard: 0, deep: 0 };
-      const depth = classifyDepth(output.outputType, output.outputContent);
+      const depth = classifyDepth(output.type, output.content ?? output.fileUrl ?? "");
       entry[depth] += 1;
       weekMap.set(key, entry);
     });
@@ -219,8 +227,8 @@ export const getOutputQualityStats = unstable_cache(
 
     const timeline = outputs.slice(0, 20).map((output) => ({
       date: output.date,
-      outputType: output.outputType,
-      outputContent: output.outputContent ?? "",
+      outputType: output.type,
+      outputContent: output.content ?? output.fileUrl ?? "",
     }));
 
     return { weeks: weeksList.reverse(), timeline };
@@ -242,50 +250,37 @@ export const getWeeklySummaries = unstable_cache(
         const weekStart = startOfDay(review.weekStartDate);
         const weekEnd = addDays(weekStart, 7);
 
-        const [dailyCompletions, mandatoryBlocks, blockCompletions] = await Promise.all([
+        const [dailyCompletions, tasks] = await Promise.all([
           prisma.dailyCompletion.findMany({
             where: { userId, date: { gte: weekStart, lt: weekEnd } },
           }),
-          prisma.scheduleBlock.findMany({ where: { userId, mandatory: true } }),
-          prisma.blockCompletion.findMany({
-            where: { userId, date: { gte: weekStart, lt: weekEnd } },
+          prisma.task.findMany({
+            where: { plan: { userId }, date: { gte: weekStart, lt: weekEnd } },
           }),
         ]);
 
         const completedCount = dailyCompletions.filter((item) => item.completedAt).length;
         const completionRate = Math.round((completedCount / 7) * 100);
 
-        const completionMap = new Map<string, Set<string>>();
-        blockCompletions.forEach((item) => {
-          const key = toKey(item.date);
-          const set = completionMap.get(key) ?? new Set<string>();
-          set.add(item.scheduleBlockId);
-          completionMap.set(key, set);
-        });
-
-        const missedByCategory: Record<string, number> = {};
-        for (let i = 0; i < 7; i += 1) {
-          const date = addDays(weekStart, i);
-          const key = toKey(date);
-          const completedSet = completionMap.get(key) ?? new Set<string>();
-          for (const block of mandatoryBlocks) {
-            if (!completedSet.has(block.id)) {
-              missedByCategory[block.category] = (missedByCategory[block.category] ?? 0) + 1;
-            }
+        const tasksByDay = new Map<string, { total: number; completed: number }>();
+        tasks.forEach((task) => {
+          const key = toKey(task.date);
+          const entry = tasksByDay.get(key) ?? { total: 0, completed: 0 };
+          entry.total += 1;
+          if (task.completed) {
+            entry.completed += 1;
           }
-        }
-
-        const mostSkippedBlock = Object.entries(missedByCategory).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+          tasksByDay.set(key, entry);
+        });
 
         let mostProductiveDay = "";
         let maxCompleted = -1;
         for (let i = 0; i < 7; i += 1) {
           const date = addDays(weekStart, i);
           const key = toKey(date);
-          const completedSet = completionMap.get(key) ?? new Set<string>();
-          const count = mandatoryBlocks.filter((block) => completedSet.has(block.id)).length;
-          if (count > maxCompleted) {
-            maxCompleted = count;
+          const entry = tasksByDay.get(key) ?? { total: 0, completed: 0 };
+          if (entry.completed > maxCompleted) {
+            maxCompleted = entry.completed;
             mostProductiveDay = dateKey(date);
           }
         }
@@ -295,7 +290,7 @@ export const getWeeklySummaries = unstable_cache(
         return {
           weekStart,
           completionRate,
-          mostSkippedBlock,
+          mostSkippedBlock: "",
           mostProductiveDay,
           quote,
         };
@@ -412,6 +407,6 @@ export const getWeeklyTimeReality = unstable_cache(
       recoveredMinutes,
     };
   },
-  [\"weekly-time-reality\"],
+  ["weekly-time-reality"],
   { revalidate: 600 },
 );

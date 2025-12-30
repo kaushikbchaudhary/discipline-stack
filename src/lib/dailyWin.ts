@@ -9,11 +9,11 @@ export type DailyWinConfig = {
 export const getDailyWinConfig = async (userId: string): Promise<DailyWinConfig> => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.dailyWinType) {
-    const incomeBlock = await prisma.scheduleBlock.findFirst({
-      where: { userId, category: "Income" },
+    const coreBlock = await prisma.scheduleBlock.findFirst({
+      where: { userId, category: "CoreWork" },
     });
-    if (incomeBlock) {
-      return { type: "either", blockId: incomeBlock.id };
+    if (coreBlock) {
+      return { type: "either", blockId: coreBlock.id };
     }
     return { type: "output" };
   }
@@ -42,9 +42,13 @@ export const upsertDailyWin = async (
   satisfiedBy: string,
 ) => {
   const day = startOfDay(date);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { activeGoalId: true },
+  });
   return prisma.dailyWin.upsert({
     where: { userId_date: { userId, date: day } },
-    create: { userId, date: day, satisfiedBy },
+    create: { userId, date: day, satisfiedBy, goalId: user?.activeGoalId ?? null },
     update: { satisfiedBy, satisfiedAt: new Date() },
   });
 };
@@ -67,6 +71,18 @@ export const isDailyWinSatisfied = async (
   }
 
   if (config.type === "output") {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { activeGoalId: true },
+    });
+    if (user?.activeGoalId) {
+      const artifact = await prisma.goalArtifact.findFirst({
+        where: { userId, goalId: user.activeGoalId, date: startOfDay(date) },
+      });
+      if (artifact) {
+        return true;
+      }
+    }
     const completion = await prisma.dailyCompletion.findUnique({
       where: { userId_date: { userId, date: startOfDay(date) } },
     });

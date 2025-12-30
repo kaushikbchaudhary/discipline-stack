@@ -65,7 +65,7 @@ export const computeWeeklyInsights = async (userId: string, weekStartDate: Date)
   }, {});
 
   const mostSkippedReason =
-    Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? \"\";
+    Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
 
   return {
     missedByCategory,

@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { addDays, dateKey, startOfDay } from "@/lib/time";
-import { getQuietWeek } from "@/lib/quiet";
 
 export default async function TimelinePage() {
   const session = await getServerAuthSession();
@@ -11,39 +10,34 @@ export default async function TimelinePage() {
     redirect("/login");
   }
 
-  const quietWeek = await getQuietWeek(session.user.id);
-  if (quietWeek) {
-    redirect("/today");
-  }
-
   const today = startOfDay(new Date());
   const start = addDays(today, -29);
 
-  const [completions, failureDays, debts, dailyWins] = await Promise.all([
+  const [completions, artifacts, plans] = await Promise.all([
     prisma.dailyCompletion.findMany({
       where: { userId: session.user.id, date: { gte: start } },
     }),
-    prisma.failureDay.findMany({
+    prisma.goalArtifact.findMany({
       where: { userId: session.user.id, date: { gte: start } },
+      orderBy: { createdAt: "desc" },
     }),
-    prisma.executionDebt.findMany({
-      where: { userId: session.user.id, missedDate: { gte: start } },
-    }),
-    prisma.dailyWin.findMany({
-      where: { userId: session.user.id, date: { gte: start } },
+    prisma.plan.findMany({
+      where: { userId: session.user.id },
+      orderBy: { startDate: "desc" },
+      include: { tasks: true },
     }),
   ]);
 
   const completionMap = new Map(
     completions.map((item) => [startOfDay(item.date).getTime(), item]),
   );
-  const failureMap = new Map(
-    failureDays.map((item) => [startOfDay(item.date).getTime(), item]),
-  );
-  const debtMap = new Map(
-    debts.map((item) => [startOfDay(item.missedDate).getTime(), item]),
-  );
-  const winMap = new Set(dailyWins.map((item) => startOfDay(item.date).getTime()));
+  const artifactMap = new Map<number, string>();
+  artifacts.forEach((artifact) => {
+    const key = startOfDay(artifact.date).getTime();
+    if (!artifactMap.has(key)) {
+      artifactMap.set(key, artifact.content ?? artifact.fileUrl ?? "");
+    }
+  });
 
   const days = Array.from({ length: 30 }).map((_, index) => addDays(start, index));
 
@@ -59,22 +53,17 @@ export default async function TimelinePage() {
         {days.map((day) => {
           const key = startOfDay(day).getTime();
           const completion = completionMap.get(key);
-          const failure = failureMap.get(key);
-          const debt = debtMap.get(key);
-          const status = failure
-            ? "Failure"
-            : completion?.completedAt
-              ? "Complete"
-              : winMap.has(key)
-                ? "Salvaged"
-                : "Incomplete";
-          const statusColor = failure
-            ? "bg-amber-200"
-            : completion?.completedAt
-              ? "bg-[color:var(--accent)] text-white"
-              : winMap.has(key)
-                ? "bg-[#6b8c8f] text-white"
-                : "bg-[color:var(--border)]";
+          const plan = plans.find((item) => {
+            const startDate = startOfDay(item.startDate).getTime();
+            const endDate = startDate + item.durationDays * 24 * 60 * 60 * 1000;
+            return key >= startDate && key < endDate;
+          });
+          const plannedTasks =
+            plan?.tasks.filter((task) => startOfDay(task.date).getTime() === key) ?? [];
+          const status = completion?.completedAt ? "Complete" : "Incomplete";
+          const statusColor = completion?.completedAt
+            ? "bg-[color:var(--accent)] text-white"
+            : "bg-[color:var(--border)]";
 
           return (
             <details key={key} className="card p-5">
@@ -86,26 +75,25 @@ export default async function TimelinePage() {
                 <span className={`chip ${statusColor}`}>{status}</span>
               </summary>
               <div className="mt-4 space-y-2 text-sm text-muted">
-                {completion?.outputContent ? (
+                {plannedTasks.length > 0 ? (
                   <div>
-                    <p className="font-semibold text-black">Output</p>
-                    <p>{completion.outputContent}</p>
+                    <p className="font-semibold text-black">Planned tasks</p>
+                    <ul className="mt-1 space-y-1">
+                      {plannedTasks.map((task) => (
+                        <li key={task.id} className="flex items-center justify-between gap-3">
+                          <span>{task.title}</span>
+                          <span className="text-xs text-muted">
+                            {task.completed ? "Done" : "Pending"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ) : null}
-                {failure ? (
+                {artifactMap.get(key) ? (
                   <div>
-                    <p className="font-semibold text-black">Failure note</p>
-                    <p>{failure.note}</p>
-                  </div>
-                ) : null}
-                {debt ? (
-                  <div>
-                    <p className="font-semibold text-black">Debt</p>
-                    <p>{debt.reason}</p>
-                    <p>
-                      {debt.resolvedAt ? "Resolved" : "Open"} ·{" "}
-                      {debt.resolutionType ? debt.resolutionType.replace("_", " ") : ""}
-                    </p>
+                    <p className="font-semibold text-black">Artifact</p>
+                    <p>{artifactMap.get(key)}</p>
                   </div>
                 ) : null}
               </div>

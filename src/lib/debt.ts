@@ -16,14 +16,6 @@ export const ensureDebtForMissedDay = async (userId: string, date: Date) => {
     return null;
   }
 
-  const dailyWin = await prisma.dailyWin.findUnique({
-    where: { userId_date: { userId, date: targetDate } },
-  });
-
-  if (dailyWin) {
-    return null;
-  }
-
   const existingDebt = await prisma.executionDebt.findFirst({
     where: { userId, missedDate: targetDate },
   });

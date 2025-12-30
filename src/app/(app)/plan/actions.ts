@@ -6,64 +6,7 @@ import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createDefaultPlan } from "@/lib/setup";
 import { refreshDailyCompletion } from "@/lib/progress";
-import { isPastDay } from "@/lib/time";
-
-const assertEditable = async (userId: string, date: Date) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) {
-    throw new Error("User not found.");
-  }
-
-  if (isPastDay(date) && !user.pastEditUnlocked) {
-    throw new Error("Past days are locked. Toggle unlock to edit.");
-  }
-};
-
-const assertPlanUnlocked = async (planId: string) => {
-  const plan = await prisma.plan.findUnique({ where: { id: planId } });
-  if (!plan) {
-    throw new Error("Plan not found.");
-  }
-  if (plan.locked) {
-    throw new Error("Plan is locked. Unlock to edit.");
-  }
-  return plan;
-};
-
-const logPlanChange = async (
-  userId: string,
-  planId: string,
-  changeType: string,
-  details: string,
-  reason: string,
-) => {
-  if (!reason.trim()) {
-    throw new Error("Reason is required for plan changes.");
-  }
-  await prisma.planChangeLog.create({
-    data: { userId, planId, changeType, details, reason },
-  });
-};
-
-export const togglePastEdit = async () => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  if (!user) {
-    return { ok: false, error: "User not found." };
-  }
-
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { pastEditUnlocked: !user.pastEditUnlocked },
-  });
-
-  revalidatePath("/plan");
-  return { ok: true, unlocked: !user.pastEditUnlocked };
-};
+import { startOfDay } from "@/lib/time";
 
 export const toggleTaskCompletion = async (taskId: string) => {
   const session = await getServerAuthSession();
@@ -72,29 +15,19 @@ export const toggleTaskCompletion = async (taskId: string) => {
   }
 
   const task = await prisma.task.findFirst({
-    where: {
-      id: taskId,
-      planDay: { plan: { userId: session.user.id } },
-    },
-    include: { planDay: true },
+    where: { id: taskId, plan: { userId: session.user.id } },
   });
 
   if (!task) {
     return { ok: false, error: "Task not found." };
   }
 
-  try {
-    await assertEditable(session.user.id, task.planDay.date);
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
   await prisma.task.update({
     where: { id: task.id },
-    data: { completedAt: task.completedAt ? null : new Date() },
+    data: { completed: !task.completed },
   });
 
-  await refreshDailyCompletion(session.user.id, task.planDay.date);
+  await refreshDailyCompletion(session.user.id, task.date);
   revalidatePath("/plan");
   return { ok: true };
 };
@@ -107,39 +40,33 @@ export const updateTask = async (formData: FormData) => {
 
   const taskId = String(formData.get("id"));
   const title = String(formData.get("title"));
-  const category = String(formData.get("category"));
-  const mandatory = formData.get("mandatory") !== null;
-  const reason = String(formData.get("reason") ?? "");
+  const description = String(formData.get("description") ?? "");
+  const startTime = String(formData.get("startTime") ?? "");
+  const endTime = String(formData.get("endTime") ?? "");
+  const durationMinutes = Number(formData.get("durationMinutes") ?? 0);
+  const incompleteReason = String(formData.get("incompleteReason") ?? "");
 
   const task = await prisma.task.findFirst({
-    where: { id: taskId, planDay: { plan: { userId: session.user.id } } },
-    include: { planDay: true },
+    where: { id: taskId, plan: { userId: session.user.id } },
   });
 
   if (!task) {
     return { ok: false, error: "Task not found." };
   }
 
-  try {
-    await assertEditable(session.user.id, task.planDay.date);
-    await assertPlanUnlocked(task.planDay.planId);
-    await logPlanChange(
-      session.user.id,
-      task.planDay.planId,
-      "task_update",
-      `Updated task: ${task.title}`,
-      reason,
-    );
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
   await prisma.task.update({
     where: { id: taskId },
-    data: { title, category, mandatory },
+    data: {
+      title,
+      description,
+      startTime: startTime || null,
+      endTime: endTime || null,
+      durationMinutes: Number.isNaN(durationMinutes) ? null : durationMinutes,
+      incompleteReason: incompleteReason.trim() || null,
+    },
   });
 
-  await refreshDailyCompletion(session.user.id, task.planDay.date);
+  await refreshDailyCompletion(session.user.id, task.date);
   revalidatePath("/plan");
   return { ok: true };
 };
@@ -150,47 +77,44 @@ export const addTask = async (formData: FormData) => {
     return { ok: false, error: "Not authenticated." };
   }
 
-  const planDayId = String(formData.get("planDayId"));
   const title = String(formData.get("title"));
-  const category = String(formData.get("category"));
-  const mandatory = formData.get("mandatory") !== null;
-  const reason = String(formData.get("reason") ?? "");
+  const description = String(formData.get("description") ?? "");
+  const startTime = String(formData.get("startTime") ?? "");
+  const endTime = String(formData.get("endTime") ?? "");
+  const durationMinutes = Number(formData.get("durationMinutes") ?? 0);
+  const incompleteReason = String(formData.get("incompleteReason") ?? "");
+  const dateValue = String(formData.get("date") ?? "");
 
-  const planDay = await prisma.planDay.findFirst({
-    where: { id: planDayId, plan: { userId: session.user.id } },
+  if (!dateValue) {
+    return { ok: false, error: "Date is required." };
+  }
+
+  const plan = await prisma.plan.findFirst({
+    where: { userId: session.user.id },
+    orderBy: { startDate: "desc" },
   });
 
-  if (!planDay) {
-    return { ok: false, error: "Plan day not found." };
+  if (!plan) {
+    return { ok: false, error: "Plan not found." };
   }
 
-  try {
-    await assertEditable(session.user.id, planDay.date);
-    await assertPlanUnlocked(planDay.planId);
-    await logPlanChange(
-      session.user.id,
-      planDay.planId,
-      "task_add",
-      `Added task: ${title}`,
-      reason,
-    );
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
-  const existingCount = await prisma.task.count({ where: { planDayId } });
+  const date = startOfDay(new Date(dateValue));
 
   await prisma.task.create({
     data: {
-      planDayId,
+      planId: plan.id,
       title,
-      category,
-      mandatory,
-      sortOrder: existingCount + 1,
+      description,
+      date,
+      startTime: startTime || null,
+      endTime: endTime || null,
+      durationMinutes: Number.isNaN(durationMinutes) ? null : durationMinutes,
+      completed: false,
+      incompleteReason: incompleteReason.trim() || null,
     },
   });
 
-  await refreshDailyCompletion(session.user.id, planDay.date);
+  await refreshDailyCompletion(session.user.id, date);
   revalidatePath("/plan");
   return { ok: true };
 };
@@ -202,34 +126,18 @@ export const deleteTask = async (formData: FormData) => {
   }
 
   const taskId = String(formData.get("id"));
-  const reason = String(formData.get("reason") ?? "");
 
   const task = await prisma.task.findFirst({
-    where: { id: taskId, planDay: { plan: { userId: session.user.id } } },
-    include: { planDay: true },
+    where: { id: taskId, plan: { userId: session.user.id } },
   });
 
   if (!task) {
     return { ok: false, error: "Task not found." };
   }
 
-  try {
-    await assertEditable(session.user.id, task.planDay.date);
-    await assertPlanUnlocked(task.planDay.planId);
-    await logPlanChange(
-      session.user.id,
-      task.planDay.planId,
-      "task_delete",
-      `Removed task: ${task.title}`,
-      reason,
-    );
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
   await prisma.task.delete({ where: { id: taskId } });
 
-  await refreshDailyCompletion(session.user.id, task.planDay.date);
+  await refreshDailyCompletion(session.user.id, task.date);
   revalidatePath("/plan");
   return { ok: true };
 };
@@ -243,42 +151,4 @@ export const regeneratePlan = async () => {
   await createDefaultPlan(session.user.id, new Date());
   revalidatePath("/plan");
   return { ok: true };
-};
-
-export const togglePlanLock = async (formData: FormData) => {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Not authenticated." };
-  }
-
-  const planId = String(formData.get("planId"));
-  const reason = String(formData.get("reason") ?? "");
-
-  const plan = await prisma.plan.findUnique({
-    where: { id: planId, userId: session.user.id },
-  });
-
-  if (!plan) {
-    return { ok: false, error: "Plan not found." };
-  }
-
-  try {
-    await logPlanChange(
-      session.user.id,
-      plan.id,
-      plan.locked ? "plan_unlock" : "plan_lock",
-      plan.locked ? "Unlocked plan" : "Locked plan",
-      reason,
-    );
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-
-  await prisma.plan.update({
-    where: { id: plan.id },
-    data: { locked: !plan.locked },
-  });
-
-  revalidatePath("/plan");
-  return { ok: true, locked: !plan.locked };
 };

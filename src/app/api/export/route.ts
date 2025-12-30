@@ -29,7 +29,7 @@ export async function GET() {
     prisma.scheduleBlock.findMany({ where: { userId } }),
     prisma.plan.findMany({
       where: { userId },
-      include: { days: { include: { tasks: true } } },
+      include: { tasks: true, days: true },
     }),
     prisma.dailyCompletion.findMany({ where: { userId } }),
     prisma.weeklyReview.findMany({ where: { userId } }),

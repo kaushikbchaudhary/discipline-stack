@@ -12,7 +12,7 @@ const credentialsSchema = z.object({
   password: z.string().min(8),
 });
 
-const providers = [
+const providers: NextAuthOptions["providers"] = [
   CredentialsProvider({
     name: "Credentials",
     credentials: {

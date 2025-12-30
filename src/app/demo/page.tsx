@@ -20,8 +20,10 @@ type DemoState = {
   tasks: {
     id: string;
     title: string;
-    category: string;
-    mandatory: boolean;
+    description: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
     completed: boolean;
   }[];
   outputContent: string;
@@ -46,8 +48,10 @@ const defaultState = (): DemoState => {
     tasks: todayPlan.tasks.map((task) => ({
       id: crypto.randomUUID(),
       title: task.title,
-      category: task.category,
-      mandatory: task.mandatory,
+      description: task.description,
+      startTime: task.startTime,
+      endTime: task.endTime,
+      durationMinutes: task.durationMinutes,
       completed: false,
     })),
     outputContent: "",
@@ -79,12 +83,11 @@ export default function DemoPage() {
       return { percent: 0, doneCount: 0, requiredCount: 0 };
     }
     const requiredBlocks = state.blocks.filter((block) => block.mandatory);
-    const requiredTasks = state.tasks.filter((task) => task.mandatory);
     const doneCount =
       requiredBlocks.filter((block) => block.completed).length +
-      requiredTasks.filter((task) => task.completed).length +
+      state.tasks.filter((task) => task.completed).length +
       (state.outputContent ? 1 : 0);
-    const requiredCount = requiredBlocks.length + requiredTasks.length + 1;
+    const requiredCount = requiredBlocks.length + state.tasks.length + 1;
     const percent = requiredCount ? Math.round((doneCount / requiredCount) * 100) : 0;
     return { percent, doneCount, requiredCount };
   }, [state]);
@@ -192,7 +195,10 @@ export default function DemoPage() {
                   >
                     <div>
                       <p className="font-semibold">{task.title}</p>
-                      <p className="text-xs text-muted">{task.category}</p>
+                      <p className="text-xs text-muted">{task.description}</p>
+                      <p className="text-xs text-muted">
+                        {task.startTime}–{task.endTime} · {task.durationMinutes} min
+                      </p>
                     </div>
                     <span
                       className={`h-3 w-3 rounded-full ${

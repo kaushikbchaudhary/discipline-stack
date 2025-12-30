@@ -128,7 +128,7 @@ export default function PlanImportPage() {
         <div className="card p-6">
           <h2 className="text-xl font-semibold">JSON import</h2>
           <p className="mt-2 text-sm text-muted">
-            Paste the ChatGPT JSON output. Each task must include date, start/end time, and duration.
+            Paste the ChatGPT JSON output. Overlapping dates replace existing tasks only for those days.
           </p>
           <textarea
             value={jsonValue}

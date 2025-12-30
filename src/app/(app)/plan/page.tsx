@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PlanClient from "@/app/(app)/plan/PlanClient";
+import { dateKey } from "@/lib/time";
 
 export default async function PlanPage() {
   const session = await getServerAuthSession();
@@ -10,15 +11,12 @@ export default async function PlanPage() {
     redirect("/login");
   }
 
-  const plans = await prisma.plan.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    include: { tasks: true },
+  const tasks = await prisma.task.findMany({
+    where: { plan: { userId: session.user.id } },
+    orderBy: { date: "asc" },
   });
 
-  const plan = plans[0];
-
-  if (!plan) {
+  if (tasks.length === 0) {
     return (
       <div className="card p-6">
         <h1 className="text-2xl font-semibold">No plan yet</h1>
@@ -32,6 +30,17 @@ export default async function PlanPage() {
       </div>
     );
   }
+
+  const dayMap = new Map<string, typeof tasks>();
+  tasks.forEach((task) => {
+    const key = dateKey(task.date);
+    const existing = dayMap.get(key) ?? [];
+    existing.push(task);
+    dayMap.set(key, existing);
+  });
+
+  const dayEntries = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const earliest = dayEntries[0]?.[1]?.[0]?.date ?? new Date();
 
   return (
     <div className="space-y-6">
@@ -49,17 +58,13 @@ export default async function PlanPage() {
         </a>
       </div>
       <PlanClient
-        planName={plan.name}
-        startDate={plan.startDate.toISOString()}
-        days={Array.from({ length: plan.durationDays }).map((_, index) => {
-          const date = new Date(plan.startDate);
-          date.setDate(date.getDate() + index);
-          const dayTasks = plan.tasks.filter(
-            (task) => new Date(task.date).toDateString() === date.toDateString(),
-          );
+        planName="All plans"
+        startDate={earliest.toISOString()}
+        days={dayEntries.map(([key, dayTasks]) => {
+          const date = new Date(key);
           return {
-            id: `${plan.id}-${index}`,
-            dayIndex: index,
+            id: key,
+            dayIndex: date.getDate() - 1,
             date: date.toISOString(),
             tasks: dayTasks.map((task) => ({
               id: task.id,

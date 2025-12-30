@@ -7,7 +7,6 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const session = await getServerAuthSession();
-
   return (
     <div className="app-shell">
       <Nav userName={session?.user?.name} />

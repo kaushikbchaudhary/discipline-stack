@@ -24,7 +24,15 @@ export default async function ReviewPage() {
         <h1 className="text-3xl font-semibold">Sunday reset</h1>
         <p className="text-sm text-muted">Capture lessons and remove noise for next week.</p>
       </div>
-      <ReviewClient q1={review?.q1} q2={review?.q2} q3={review?.q3} q4={review?.q4} />
+      <ReviewClient
+        q1={review?.q1}
+        q2={review?.q2}
+        q3={review?.q3}
+        q4={review?.q4}
+        stopDoing={review?.stopDoing}
+        resistanceBlock={review?.resistanceBlock}
+        locked={Boolean(review)}
+      />
     </div>
   );
 }

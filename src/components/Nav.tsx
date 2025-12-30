@@ -5,16 +5,20 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 
 const links = [
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/today", label: "Today" },
-  { href: "/timetable", label: "Timetable" },
   { href: "/plan", label: "Plan" },
-  { href: "/progress", label: "Progress" },
+  { href: "/plan/import", label: "Plan Import" },
   { href: "/review", label: "Review" },
-  { href: "/export", label: "Export" },
 ];
 
-export default function Nav({ userName }: { userName?: string | null }) {
+export default function Nav({
+  userName,
+}: {
+  userName?: string | null;
+}) {
   const pathname = usePathname();
+  const visibleLinks = links;
 
   return (
     <header className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--surface)]/80 backdrop-blur">
@@ -26,7 +30,7 @@ export default function Nav({ userName }: { userName?: string | null }) {
           <span className="text-sm text-muted">{userName ?? ""}</span>
         </div>
         <nav className="flex flex-wrap items-center gap-2">
-          {links.map((link) => {
+          {visibleLinks.map((link) => {
             const active = pathname === link.href;
             return (
               <Link

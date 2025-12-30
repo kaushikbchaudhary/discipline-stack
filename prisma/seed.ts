@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "../src/lib/prisma";
 import {
-  createDefaultPlan,
+  createDefaultGoal,
   createScheduleFromOnboarding,
   DEFAULT_ONBOARDING,
 } from "../src/lib/setup";
@@ -21,12 +21,12 @@ const main = async () => {
     },
   });
 
-  const existingPlan = await prisma.plan.findFirst({
-    where: { userId: user.id },
+  const existingGoal = await prisma.goal.findFirst({
+    where: { userId: user.id, isActive: true },
   });
 
-  if (!existingPlan) {
-    await createDefaultPlan(user.id, new Date());
+  if (!existingGoal) {
+    await createDefaultGoal(user.id);
   }
 
   const existingBlocks = await prisma.scheduleBlock.findFirst({

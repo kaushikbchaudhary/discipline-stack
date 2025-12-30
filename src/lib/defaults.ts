@@ -1,22 +1,22 @@
 import { addDays, startOfDay, timeStringToMinutes } from "@/lib/time";
 
 export const CATEGORY_OPTIONS = [
+  "CoreWork",
+  "SupportWork",
+  "Learning",
+  "Practice",
   "Health",
-  "Income",
-  "Creation",
   "Reflection",
-  "Rest",
+  "Recovery",
 ] as const;
 
 export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
 
 export type OnboardingInput = {
   wakeTime: string;
-  gymHours: number;
-  choresHours: number;
-  incomeHours: number;
-  nonReplaceableHours: number;
-  reflectionHours: number;
+  dailyCapacityHours: number;
+  healthHours: number;
+  recoveryHours: number;
 };
 
 export type ScheduleDraft = {
@@ -30,6 +30,11 @@ export type ScheduleDraft = {
 export const buildDefaultSchedule = (input: OnboardingInput): ScheduleDraft[] => {
   const wakeMinutes = timeStringToMinutes(input.wakeTime);
   let cursor = wakeMinutes;
+
+  const dailyCapacity = Math.max(3, input.dailyCapacityHours);
+  const coreWorkHours = Math.max(2, Math.round(dailyCapacity * 0.6));
+  const learningHours = Math.max(1, Math.round(dailyCapacity * 0.2));
+  const practiceHours = Math.max(1, dailyCapacity - coreWorkHours - learningHours);
 
   const blocks: ScheduleDraft[] = [];
   const addBlock = (
@@ -45,54 +50,56 @@ export const buildDefaultSchedule = (input: OnboardingInput): ScheduleDraft[] =>
   };
 
   addBlock("Wake + reset", 1, "Reflection");
-  addBlock("Gym", input.gymHours, "Health", true);
-  addBlock("Cooking + chores", input.choresHours, "Health", true);
-  addBlock("Income block", input.incomeHours, "Income", true);
-  addBlock("Non-replaceable output", input.nonReplaceableHours, "Creation", true);
-  addBlock("Reflection", input.reflectionHours, "Reflection");
-  addBlock("Rest", Math.max(1, Math.floor((24 * 60 - cursor) / 60)), "Rest");
+  addBlock("Health non-negotiable", input.healthHours, "Health", true);
+  addBlock("Core work", coreWorkHours, "CoreWork", true);
+  addBlock("Learning", learningHours, "Learning", true);
+  addBlock("Practice", practiceHours, "Practice", true);
+  addBlock("Support work", 1, "SupportWork");
+  addBlock("Reflection", 1, "Reflection");
+  addBlock("Recovery", input.recoveryHours, "Recovery");
+  addBlock("Buffer", Math.max(1, Math.floor((24 * 60 - cursor) / 60)), "Recovery");
 
   return blocks.filter((block) => block.endTime <= 24 * 60);
 };
 
 const week1Tasks = [
-  "Stabilize wake time",
-  "Reset workspace",
-  "Define income target",
-  "List top 5 leads",
-  "Clean inbox + notes",
-  "Write a 1-paragraph offer",
-  "Prepare outreach template",
+  "Set goal scope for the week",
+  "Organize materials and tools",
+  "Define the single focus for today",
+  "Review blockers from yesterday",
+  "Draft next action list",
+  "Clarify success criteria",
+  "Prepare practice materials",
 ];
 
 const week2Tasks = [
-  "Build lead pipeline",
-  "Publish 1 useful insight",
-  "Send 10 outreaches",
-  "Refine offer promise",
-  "Review outreach replies",
-  "Schedule 2 calls",
-  "Update portfolio proof",
+  "Increase core work intensity",
+  "Summarize key learning notes",
+  "Complete a focused practice set",
+  "Review mistakes and patterns",
+  "Refine the daily structure",
+  "Document one clear improvement",
+  "Schedule a recovery window",
 ];
 
 const week3Tasks = [
-  "Run 2 discovery calls",
-  "Improve close script",
-  "Send follow-up sequence",
-  "Ship a case study",
-  "Review conversion blockers",
-  "Tighten qualification",
-  "Ask for referrals",
+  "Deepen practice quality",
+  "Focus on weak areas",
+  "Apply learning to practice",
+  "Review progress metrics",
+  "Adjust next actions",
+  "Consolidate notes",
+  "Plan next week's rhythm",
 ];
 
 const week4Tasks = [
-  "Negotiate terms",
-  "Document delivery plan",
-  "Close 1 offer",
-  "Review pricing",
-  "Send last follow-ups",
-  "Collect testimonials",
-  "Plan next month",
+  "Run a full review day",
+  "Consolidate best artifacts",
+  "Evaluate consistency gaps",
+  "Update goal roadmap",
+  "Reduce low-value tasks",
+  "Plan the next cycle",
+  "Set next checkpoint",
 ];
 
 const weekTasks = [week1Tasks, week2Tasks, week3Tasks, week4Tasks];
@@ -105,34 +112,54 @@ export const buildDefaultPlan = (startDate: Date, durationDays = 30) => {
     const weekIndex = Math.min(3, Math.floor(index / 7));
     const themeTasks = weekTasks[weekIndex];
     const taskTitle = themeTasks[index % themeTasks.length];
+    const dayStart = 9 * 60;
+    const durations = [60, 60, 60];
+    const toTime = (minutes: number) =>
+      `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 
     return {
       dayIndex: index,
       date,
       tasks: [
         {
-          title: "Income block completed",
-          category: "Income",
-          mandatory: true,
-          sortOrder: 1,
+          title: "Core work completed",
+          description: "Main execution for today.",
+          date,
+          startTime: toTime(dayStart),
+          endTime: toTime(dayStart + durations[0]),
+          durationMinutes: durations[0],
+          completed: false,
+          incompleteReason: null,
         },
         {
-          title: "Non-replaceable output created",
-          category: "Creation",
-          mandatory: true,
-          sortOrder: 2,
+          title: "Practice session completed",
+          description: "Focused practice or revision.",
+          date,
+          startTime: toTime(dayStart + durations[0]),
+          endTime: toTime(dayStart + durations[0] + durations[1]),
+          durationMinutes: durations[1],
+          completed: false,
+          incompleteReason: null,
         },
         {
-          title: "Health + cooking done",
-          category: "Health",
-          mandatory: true,
-          sortOrder: 3,
+          title: "Health baseline completed",
+          description: "Health maintenance task.",
+          date,
+          startTime: toTime(dayStart + durations[0] + durations[1]),
+          endTime: toTime(dayStart + durations[0] + durations[1] + durations[2]),
+          durationMinutes: durations[2],
+          completed: false,
+          incompleteReason: null,
         },
         {
           title: taskTitle,
-          category: "Creation",
-          mandatory: false,
-          sortOrder: 4,
+          description: "Optional support task for today.",
+          date,
+          startTime: toTime(dayStart + 180),
+          endTime: toTime(dayStart + 240),
+          durationMinutes: 60,
+          completed: false,
+          incompleteReason: null,
         },
       ],
     };

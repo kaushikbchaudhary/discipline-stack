@@ -12,7 +12,15 @@ import {
   updateBlock,
 } from "@/app/(app)/timetable/actions";
 
-const categories = ["Health", "Income", "Creation", "Reflection", "Rest"];
+const categories = [
+  "CoreWork",
+  "SupportWork",
+  "Learning",
+  "Practice",
+  "Health",
+  "Reflection",
+  "Recovery",
+];
 
 type BlockView = {
   id: string;

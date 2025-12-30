@@ -17,18 +17,28 @@ export const saveWeeklyReview = async (formData: FormData) => {
   const q2 = String(formData.get("q2") ?? "");
   const q3 = String(formData.get("q3") ?? "");
   const q4 = String(formData.get("q4") ?? "");
+  const stopDoing = String(formData.get("stopDoing") ?? "");
+  const resistanceBlock = String(formData.get("resistanceBlock") ?? "");
 
-  await prisma.weeklyReview.upsert({
+  const existing = await prisma.weeklyReview.findUnique({
     where: { userId_weekStartDate: { userId: session.user.id, weekStartDate } },
-    create: {
+  });
+
+  if (existing) {
+    return { ok: false, error: "Weekly review is locked after submission." };
+  }
+
+  await prisma.weeklyReview.create({
+    data: {
       userId: session.user.id,
       weekStartDate,
       q1,
       q2,
       q3,
       q4,
+      stopDoing,
+      resistanceBlock,
     },
-    update: { q1, q2, q3, q4 },
   });
 
   revalidatePath("/review");

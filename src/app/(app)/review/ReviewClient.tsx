@@ -11,9 +11,20 @@ type ReviewClientProps = {
   q2?: string | null;
   q3?: string | null;
   q4?: string | null;
+  stopDoing?: string | null;
+  resistanceBlock?: string | null;
+  locked: boolean;
 };
 
-export default function ReviewClient({ q1, q2, q3, q4 }: ReviewClientProps) {
+export default function ReviewClient({
+  q1,
+  q2,
+  q3,
+  q4,
+  stopDoing,
+  resistanceBlock,
+  locked,
+}: ReviewClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -32,22 +43,25 @@ export default function ReviewClient({ q1, q2, q3, q4 }: ReviewClientProps) {
   };
 
   return (
-    <form onSubmit={handleSave} className="card space-y-4 p-6">
+    <div className="space-y-6">
+      <form onSubmit={handleSave} className="card space-y-4 p-6">
       <div>
-        <label className="text-sm font-medium">What moved me closer to income?</label>
+        <label className="text-sm font-medium">What moved me closer to the goal?</label>
         <textarea
           name="q1"
           defaultValue={q1 ?? ""}
           rows={3}
+          disabled={locked}
           className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
         />
       </div>
       <div>
-        <label className="text-sm font-medium">What output did I create?</label>
+        <label className="text-sm font-medium">What artifact did I create?</label>
         <textarea
           name="q2"
           defaultValue={q2 ?? ""}
           rows={3}
+          disabled={locked}
           className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
         />
       </div>
@@ -57,6 +71,7 @@ export default function ReviewClient({ q1, q2, q3, q4 }: ReviewClientProps) {
           name="q3"
           defaultValue={q3 ?? ""}
           rows={3}
+          disabled={locked}
           className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
         />
       </div>
@@ -66,16 +81,38 @@ export default function ReviewClient({ q1, q2, q3, q4 }: ReviewClientProps) {
           name="q4"
           defaultValue={q4 ?? ""}
           rows={3}
+          disabled={locked}
+          className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
+        />
+      </div>
+      <div>
+        <label className="text-sm font-medium">What should I STOP doing next week?</label>
+        <textarea
+          name="stopDoing"
+          defaultValue={stopDoing ?? ""}
+          rows={3}
+          disabled={locked}
+          className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
+        />
+      </div>
+      <div>
+        <label className="text-sm font-medium">What block caused the most resistance?</label>
+        <textarea
+          name="resistanceBlock"
+          defaultValue={resistanceBlock ?? ""}
+          rows={3}
+          disabled={locked}
           className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
         />
       </div>
       <button
         type="submit"
-        disabled={isPending}
+        disabled={isPending || locked}
         className="w-full rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
       >
-        Save review
+        {locked ? "Review locked" : "Save review"}
       </button>
-    </form>
+      </form>
+    </div>
   );
 }

@@ -68,7 +68,7 @@ export default function LoginPage() {
               <h1 className="text-4xl font-semibold">Focus on the next required move.</h1>
               <p className="text-base text-muted">
                 Build a daily timetable, follow a 30-day plan, and only complete a day when
-                mandatory blocks are done.
+                daily tasks are completed.
               </p>
             </div>
             <div className="card-muted rounded-2xl border border-[color:var(--border)] p-5 text-sm text-muted">

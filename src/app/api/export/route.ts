@@ -11,17 +11,38 @@ export async function GET() {
 
   const userId = session.user.id;
 
-  const [scheduleBlocks, plans, dailyCompletions, weeklyReviews, blockCompletions] =
-    await Promise.all([
-      prisma.scheduleBlock.findMany({ where: { userId } }),
-      prisma.plan.findMany({
-        where: { userId },
-        include: { days: { include: { tasks: true } } },
-      }),
-      prisma.dailyCompletion.findMany({ where: { userId } }),
-      prisma.weeklyReview.findMany({ where: { userId } }),
-      prisma.blockCompletion.findMany({ where: { userId } }),
-    ]);
+  const [
+    scheduleBlocks,
+    plans,
+    dailyCompletions,
+    weeklyReviews,
+    blockCompletions,
+    executionDebts,
+    failureDays,
+    planChangeLogs,
+    weeklyInsights,
+    blockResistances,
+    nextActions,
+    goals,
+    goalArtifacts,
+  ] = await Promise.all([
+    prisma.scheduleBlock.findMany({ where: { userId } }),
+    prisma.plan.findMany({
+      where: { userId },
+      include: { days: { include: { tasks: true } } },
+    }),
+    prisma.dailyCompletion.findMany({ where: { userId } }),
+    prisma.weeklyReview.findMany({ where: { userId } }),
+    prisma.blockCompletion.findMany({ where: { userId } }),
+    prisma.executionDebt.findMany({ where: { userId } }),
+    prisma.failureDay.findMany({ where: { userId } }),
+    prisma.planChangeLog.findMany({ where: { userId } }),
+    prisma.weeklyInsights.findMany({ where: { userId } }),
+    prisma.blockResistance.findMany({ where: { userId } }),
+    prisma.nextAction.findMany({ where: { userId } }),
+    prisma.goal.findMany({ where: { userId } }),
+    prisma.goalArtifact.findMany({ where: { userId } }),
+  ]);
 
   return NextResponse.json({
     scheduleBlocks,
@@ -29,5 +50,13 @@ export async function GET() {
     dailyCompletions,
     weeklyReviews,
     blockCompletions,
+    executionDebts,
+    failureDays,
+    planChangeLogs,
+    weeklyInsights,
+    blockResistances,
+    nextActions,
+    goals,
+    goalArtifacts,
   });
 }

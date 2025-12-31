@@ -1,6 +1,10 @@
 "use client";
 
-import { minutesToTimeString } from "@/lib/time";
+import { useState, useTransition, type FormEvent } from "react";
+import toast from "react-hot-toast";
+
+import { minutesToTimeString, timeStringToMinutes } from "@/lib/time";
+import { apiFetch } from "@/lib/api";
 
 const categories = [
   "CoreWork",
@@ -23,14 +27,87 @@ type BlockView = {
 
 type TimetableClientProps = {
   blocks: BlockView[];
-  locked: boolean;
 };
 
-export default function TimetableClient({ blocks, locked }: TimetableClientProps) {
-  const handleCreate = () => null;
-  const handleUpdate = () => null;
-  const handleDelete = () => null;
-  const handleLockToggle = () => null;
+export default function TimetableClient({ blocks }: TimetableClientProps) {
+  const [isPending, startTransition] = useTransition();
+  const [form, setForm] = useState({
+    name: "",
+    startTime: "06:00",
+    endTime: "07:00",
+    category: "CoreWork",
+    mandatory: false,
+  });
+
+  const handleCreate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    startTransition(async () => {
+      try {
+        const durationMinutes =
+          timeStringToMinutes(form.endTime) - timeStringToMinutes(form.startTime);
+        await apiFetch("/blocks", {
+          method: "POST",
+          body: JSON.stringify({
+            name: form.name,
+            category: form.category,
+            startTime: form.startTime,
+            endTime: form.endTime,
+            durationMinutes: Math.max(0, durationMinutes),
+            mandatory: form.mandatory,
+          }),
+        });
+        toast.success("Block added.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not add block.";
+        toast.error(message);
+      }
+    });
+  };
+
+  const handleUpdate = (event: FormEvent<HTMLFormElement>, block: BlockView) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      try {
+        const startTime = String(formData.get("startTime"));
+        const endTime = String(formData.get("endTime"));
+        await apiFetch("/blocks", {
+          method: "PATCH",
+          body: JSON.stringify({
+            id: block.id,
+            name: String(formData.get("name")),
+            category: String(formData.get("category")),
+            startTime,
+            endTime,
+            durationMinutes: timeStringToMinutes(endTime) - timeStringToMinutes(startTime),
+            mandatory: Boolean(formData.get("mandatory")),
+          }),
+        });
+        toast.success("Block updated.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not update block.";
+        toast.error(message);
+      }
+    });
+  };
+
+  const handleDelete = (blockId: string) => {
+    startTransition(async () => {
+      try {
+        await apiFetch("/blocks", {
+          method: "DELETE",
+          body: JSON.stringify({ id: blockId }),
+        });
+        toast.success("Block deleted.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not delete block.";
+        toast.error(message);
+      }
+    });
+  };
   return (
     <div className="space-y-8">
       <div className="card p-6">
@@ -41,18 +118,9 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
               When locked, edits require a confirmation checkbox.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleLockToggle}
-            disabled
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${
-              locked
-                ? "bg-[color:var(--accent)] text-white"
-                : "border border-[color:var(--border)] text-black"
-            }`}
-          >
-            {locked ? "Locked" : "Unlocked"}
-          </button>
+          <span className="rounded-full border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-muted">
+            Locking disabled
+          </span>
         </div>
       </div>
 
@@ -63,12 +131,16 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
             name="name"
             placeholder="Block name"
             required
+            value={form.name}
+            onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
             className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
           <select
             name="category"
             className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
             required
+            value={form.category}
+            onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>
@@ -80,27 +152,30 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
             name="startTime"
             type="time"
             required
+            value={form.startTime}
+            onChange={(event) => setForm((prev) => ({ ...prev, startTime: event.target.value }))}
             className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
           <input
             name="endTime"
             type="time"
             required
+            value={form.endTime}
+            onChange={(event) => setForm((prev) => ({ ...prev, endTime: event.target.value }))}
             className="rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
           <label className="flex items-center gap-2 text-sm">
-            <input name="mandatory" type="checkbox" /> Mandatory block
+            <input
+              name="mandatory"
+              type="checkbox"
+              checked={form.mandatory}
+              onChange={(event) => setForm((prev) => ({ ...prev, mandatory: event.target.checked }))}
+            />
+            Mandatory block
           </label>
-          {locked ? (
-            <label className="flex items-center gap-2 text-sm">
-              <input name="confirmed" type="checkbox" value="true" /> Confirm schedule edit
-            </label>
-          ) : (
-            <input type="hidden" name="confirmed" value="true" />
-          )}
           <button
             type="submit"
-            disabled
+            disabled={isPending}
             className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             Add block
@@ -110,7 +185,11 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
 
       <div className="space-y-4">
         {blocks.map((block) => (
-          <form key={block.id} onSubmit={handleUpdate} className="card p-6">
+          <form
+            key={block.id}
+            onSubmit={(event) => handleUpdate(event, block)}
+            className="card p-6"
+          >
             <input type="hidden" name="id" value={block.id} />
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -154,25 +233,18 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
                 <input name="mandatory" type="checkbox" defaultChecked={block.mandatory} />
                 Mandatory block
               </label>
-              {locked ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <input name="confirmed" type="checkbox" value="true" /> Confirm schedule edit
-                </label>
-              ) : (
-                <input type="hidden" name="confirmed" value="true" />
-              )}
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="submit"
-                disabled
+                disabled={isPending}
                 className="rounded-xl bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white"
               >
                 Save changes
               </button>
               <button
                 type="button"
-                disabled
+                disabled={isPending}
                 onClick={() => handleDelete(block.id)}
                 className="rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-muted"
               >

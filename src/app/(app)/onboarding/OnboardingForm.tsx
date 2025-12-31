@@ -1,6 +1,36 @@
+import { useState, useTransition, type FormEvent } from "react";
+import toast from "react-hot-toast";
+
+import { apiFetch } from "@/lib/api";
+
 export default function OnboardingForm() {
+  const [isPending, startTransition] = useTransition();
+  const [form, setForm] = useState({
+    goalTitle: "Build consistent execution",
+    goalDescription: "",
+    goalType: "CUSTOM",
+    startDate: new Date().toISOString().slice(0, 10),
+  });
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    startTransition(async () => {
+      try {
+        await apiFetch("/onboarding", {
+          method: "POST",
+          body: JSON.stringify(form),
+        });
+        toast.success("Goal saved.");
+        window.location.href = "/today";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not save.";
+        toast.error(message);
+      }
+    });
+  };
+
   return (
-    <div className="card space-y-6 p-6">
+    <form onSubmit={handleSubmit} className="card space-y-6 p-6">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
           <label className="text-sm font-medium">Primary goal title</label>
@@ -8,7 +38,8 @@ export default function OnboardingForm() {
             name="goalTitle"
             type="text"
             required
-            defaultValue="Build consistent execution"
+            value={form.goalTitle}
+            onChange={(event) => setForm((prev) => ({ ...prev, goalTitle: event.target.value }))}
             className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
         </div>
@@ -17,6 +48,10 @@ export default function OnboardingForm() {
           <textarea
             name="goalDescription"
             rows={2}
+            value={form.goalDescription}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, goalDescription: event.target.value }))
+            }
             className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
         </div>
@@ -25,6 +60,8 @@ export default function OnboardingForm() {
           <select
             name="goalType"
             className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
+            value={form.goalType}
+            onChange={(event) => setForm((prev) => ({ ...prev, goalType: event.target.value }))}
           >
             <option value="EXAM_PREP">Exam prep</option>
             <option value="CAREER_GROWTH">Career growth</option>
@@ -36,51 +73,23 @@ export default function OnboardingForm() {
           </select>
         </div>
         <div>
-          <label className="text-sm font-medium">Wake time</label>
+          <label className="text-sm font-medium">Start date</label>
           <input
-            name="wakeTime"
-            type="time"
-            defaultValue="06:00"
-            className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Daily execution capacity (hours)</label>
-          <input
-            name="dailyCapacityHours"
-            type="number"
-            min={3}
-            max={10}
-            defaultValue={4}
-            className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Health non-negotiable (hours)</label>
-          <input
-            name="healthHours"
-            type="number"
-            min={1}
-            max={4}
-            defaultValue={2}
-            className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Recovery buffer (hours)</label>
-          <input
-            name="recoveryHours"
-            type="number"
-            min={1}
-            max={6}
-            defaultValue={2}
+            name="startDate"
+            type="date"
+            value={form.startDate}
+            onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))}
             className="mt-2 w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2"
           />
         </div>
       </div>
-      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-alt)] px-4 py-3 text-sm text-muted">
-        Onboarding will be reconnected to the Worker API in the next step.
-      </div>
-    </div>
+      <button
+        type="submit"
+        disabled={isPending}
+        className="w-full rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+      >
+        Save goal
+      </button>
+    </form>
   );
 }

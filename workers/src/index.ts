@@ -94,6 +94,51 @@ router.post("/user/ensure", async (request: AuthedRequest, env: Env) => {
   return json({ ok: true });
 });
 
+const onboardingSchema = z.object({
+  goalTitle: z.string().min(1),
+  goalDescription: z.string().optional().nullable(),
+  goalType: z.enum([
+    "EXAM_PREP",
+    "CAREER_GROWTH",
+    "BUSINESS",
+    "SKILL_BUILDING",
+    "HEALTH",
+    "PERSONAL_SYSTEM",
+    "CUSTOM",
+  ]),
+  startDate: z.string(),
+});
+
+router.post("/onboarding", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await request.json().catch(() => null);
+  const parsed = onboardingSchema.safeParse(body);
+  if (!parsed.success) {
+    return json({ error: "Invalid payload" }, 400);
+  }
+
+  const response = await restRequest(env, "goals", {
+    method: "POST",
+    token: request.token,
+    body: JSON.stringify({
+      user_id: user.id,
+      title: parsed.data.goalTitle,
+      description: parsed.data.goalDescription ?? null,
+      goal_type: parsed.data.goalType,
+      start_date: parsed.data.startDate,
+      is_active: true,
+    }),
+  });
+  if (!response.ok) {
+    return json({ error: "Goal create failed" }, 500);
+  }
+
+  return json({ ok: true });
+});
+
 router.get("/today", async (request: AuthedRequest, env: Env) => {
   const user = await withAuth(request, env);
   if (!user || !request.token) {
@@ -191,6 +236,117 @@ router.post("/tasks", async (request: AuthedRequest, env: Env) => {
 
   if (!response.ok) {
     return json({ error: "Create failed" }, 500);
+  }
+  return json({ ok: true });
+});
+
+router.get("/blocks", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const response = await restRequest(env, `execution_blocks?user_id=eq.${user.id}&order=start_time.asc`, {
+    token: request.token,
+  });
+  const blocks = await response.json();
+  return json({ blocks });
+});
+
+const blockSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1),
+  category: z.enum([
+    "CoreWork",
+    "SupportWork",
+    "Learning",
+    "Practice",
+    "Health",
+    "Reflection",
+    "Recovery",
+  ]),
+  startTime: z.string(),
+  endTime: z.string(),
+  durationMinutes: z.number().int(),
+  mandatory: z.boolean(),
+});
+
+router.post("/blocks", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await request.json().catch(() => null);
+  const parsed = blockSchema.safeParse(body);
+  if (!parsed.success) {
+    return json({ error: "Invalid payload" }, 400);
+  }
+  const response = await restRequest(env, "execution_blocks", {
+    method: "POST",
+    token: request.token,
+    body: JSON.stringify({
+      user_id: user.id,
+      name: parsed.data.name,
+      category: parsed.data.category,
+      start_time: parsed.data.startTime,
+      end_time: parsed.data.endTime,
+      duration_minutes: parsed.data.durationMinutes,
+      mandatory: parsed.data.mandatory,
+    }),
+  });
+  if (!response.ok) {
+    return json({ error: "Create failed" }, 500);
+  }
+  return json({ ok: true });
+});
+
+router.patch("/blocks", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await request.json().catch(() => null);
+  const parsed = blockSchema.safeParse(body);
+  if (!parsed.success || !parsed.data.id) {
+    return json({ error: "Invalid payload" }, 400);
+  }
+  const response = await restRequest(
+    env,
+    `execution_blocks?id=eq.${parsed.data.id}&user_id=eq.${user.id}`,
+    {
+      method: "PATCH",
+      token: request.token,
+      body: JSON.stringify({
+        name: parsed.data.name,
+        category: parsed.data.category,
+        start_time: parsed.data.startTime,
+        end_time: parsed.data.endTime,
+        duration_minutes: parsed.data.durationMinutes,
+        mandatory: parsed.data.mandatory,
+      }),
+    },
+  );
+  if (!response.ok) {
+    return json({ error: "Update failed" }, 500);
+  }
+  return json({ ok: true });
+});
+
+router.delete("/blocks", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await request.json().catch(() => null);
+  const parsed = z.object({ id: z.string().uuid() }).safeParse(body);
+  if (!parsed.success) {
+    return json({ error: "Invalid payload" }, 400);
+  }
+  const response = await restRequest(env, `execution_blocks?id=eq.${parsed.data.id}&user_id=eq.${user.id}`, {
+    method: "DELETE",
+    token: request.token,
+  });
+  if (!response.ok) {
+    return json({ error: "Delete failed" }, 500);
   }
   return json({ ok: true });
 });
@@ -618,6 +774,43 @@ router.get("/dashboard", async (request: AuthedRequest, env: Env) => {
     outputStats,
     weeklySummaries,
   });
+});
+
+router.get("/timeline", async (request: AuthedRequest, env: Env) => {
+  const user = await withAuth(request, env);
+  if (!user || !request.token) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 29);
+  const startIso = start.toISOString().slice(0, 10);
+  const endIso = now.toISOString().slice(0, 10);
+
+  const [tasksRes, artifactsRes, completionsRes] = await Promise.all([
+    restRequest(
+      env,
+      `tasks?user_id=eq.${user.id}&date=gte.${startIso}&date=lte.${endIso}`,
+      { token: request.token },
+    ),
+    restRequest(
+      env,
+      `artifacts?user_id=eq.${user.id}&date=gte.${startIso}&date=lte.${endIso}&order=date.desc`,
+      { token: request.token },
+    ),
+    restRequest(
+      env,
+      `daily_completions?user_id=eq.${user.id}&date=gte.${startIso}&date=lte.${endIso}`,
+      { token: request.token },
+    ),
+  ]);
+
+  const tasks = await tasksRes.json();
+  const artifacts = await artifactsRes.json();
+  const completions = await completionsRes.json();
+
+  return json({ tasks, artifacts, completions });
 });
 
 router.get("/review", async (request: AuthedRequest, env: Env) => {

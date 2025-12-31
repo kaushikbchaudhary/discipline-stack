@@ -1,6 +1,6 @@
 # Execution OS
 
-Execution OS is a production-ready Next.js app for simple daily execution tracking with a 30-day plan and proof capture.
+Execution OS is a goal-agnostic execution tracker with a 30-day plan and proof capture, built for a 100% free deployment stack.
 
 ## Versioning
 - Current version: 0.4.0
@@ -8,18 +8,19 @@ Execution OS is a production-ready Next.js app for simple daily execution tracki
 
 ## Features
 - 30-day plan with editable daily tasks (imports overwrite older plans).
-- Today view with task check-off, proof capture (text/link/file up to 20MB), and push notifications.
+- Today view with task check-off and proof capture (text/link).
 - AI plan import (JSON) for fast planning.
 - Dashboard with completion overview and artifact timeline.
-- Auth-protected routes with NextAuth (credentials + optional Google).
+- Auth via Supabase.
 - Demo route (`/demo`) that works without login using localStorage.
 - JSON export endpoint for progress data.
 
 ## Tech
-- Next.js (App Router) + TypeScript
+- Next.js static export + TypeScript
 - Tailwind CSS
-- Prisma + SQLite (local dev)
-- NextAuth
+- Prisma schema + Supabase Postgres (no Prisma client at runtime)
+- Supabase Auth
+- Cloudflare Workers backend
 - Zod validation
 - Jest unit tests
 - ESLint + Prettier
@@ -27,8 +28,6 @@ Execution OS is a production-ready Next.js app for simple daily execution tracki
 ## Getting started
 ```bash
 npm install
-npm run prisma:migrate
-npm run db:seed
 npm run dev
 ```
 
@@ -36,42 +35,47 @@ Open `http://localhost:3000`.
 
 Note: Prisma CLI currently supports Node 20/22 LTS. If you hit a schema engine error on newer Node versions, switch to an LTS version before running migrations.
 
-### Credentials for seed user
-- Email: `demo@executionos.local`
-- Password: `password123`
-
 ## Environment variables
 Copy `.env.example` to `.env` and update values.
 
 Required:
-- `DATABASE_URL` (SQLite default: `file:./dev.db`)
-- `NEXTAUTH_SECRET`
-- `NEXTAUTH_URL`
+- `DATABASE_URL` (Supabase Postgres connection string, for migrations only)
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_API_URL` (Cloudflare Worker base URL)
 
-Optional (Google auth):
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `NEXT_PUBLIC_GOOGLE_ENABLED=1`
+## Database Initialization (First Deploy Only)
+Execution OS uses Prisma only for schema definition and the initial Postgres migration.
 
-Optional (Push notifications):
-- `VAPID_PUBLIC_KEY`
-- `VAPID_PRIVATE_KEY`
-- `VAPID_SUBJECT` (e.g. `mailto:you@example.com`)
-- `PUSH_CRON_SECRET` (optional shared secret for the dispatch endpoint)
+1. Set `DATABASE_URL` to your Supabase Postgres connection string.
+2. Apply the single migration in `prisma/migrations/20260101000000_init_execution_os_schema/`.
+3. Run the RLS setup in `docs/database/rls.sql` inside Supabase SQL editor.
 
-## Switching to Postgres (production)
-1. Update `DATABASE_URL` to a Postgres connection string.
-2. Change `provider = "sqlite"` to `provider = "postgresql"` in `prisma/schema.prisma`.
-3. Run `npm run prisma:migrate` to create migrations in your new database.
+Do not run migrations at runtime. All schema changes after the first deploy should be done
+with new migrations locally, then applied to Supabase manually.
 
 ## Scripts
 - `npm run dev`
 - `npm run build`
-- `npm run start`
 - `npm run lint`
 - `npm run test`
-- `npm run prisma:migrate`
-- `npm run db:seed`
+
+## Cloudflare Worker backend
+The Worker lives in `workers/` and exposes REST endpoints for the static frontend.
+
+Setup:
+1. `cd workers`
+2. `npm install`
+3. `wrangler dev`
+
+Set these Worker env vars in `workers/wrangler.toml` or the Cloudflare dashboard:
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+## Firebase static hosting
+1. Build the static export: `npm run build`
+2. Deploy the `out/` directory to Firebase Hosting.
 
 ## Key routes
 - `/today` - Daily execution and proof.
@@ -85,7 +89,6 @@ Optional (Push notifications):
 See `prisma/schema.prisma` for full schema.
 
 ## Future improvements
-- File upload for goal artifacts.
 - Reminders (email or notifications).
 - Inline charts for monthly trends.
 - Team mode for accountability partners.
@@ -95,22 +98,4 @@ See `docs/dashboard.md` for visual meaning and metrics definitions.
 
 ## AI Plan Import
 - Generate a strict ChatGPT prompt and import JSON plans at `/plan/import`.
-- Validation enforces date order, time fields, and daily capacity limits.
-
-## Push notifications
-Execution OS can send background notifications at task start times via Web Push.
-
-Setup:
-1. Generate VAPID keys (example below).
-2. Add `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` to `.env`.
-3. (Optional) Set `PUSH_CRON_SECRET` to protect the dispatch endpoint.
-4. Schedule a cron job to hit `/api/push/dispatch` every 5 minutes.
-
-Example key generation:
-```bash
-npx web-push generate-vapid-keys
-```
-
-Cron example (Vercel):
-- Create a cron job to `POST https://your-domain.com/api/push/dispatch`
-- Add `Authorization: Bearer <PUSH_CRON_SECRET>` if you set a secret.
+- Validation enforces date order and time fields.

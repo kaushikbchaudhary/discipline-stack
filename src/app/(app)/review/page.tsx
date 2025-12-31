@@ -1,21 +1,33 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getServerAuthSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { useEffect, useState } from "react";
+
 import { getWeekStart } from "@/lib/time";
 import ReviewClient from "@/app/(app)/review/ReviewClient";
+import { apiFetch } from "@/lib/api";
 
-export default async function ReviewPage() {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+type Review = {
+  q1: string;
+  q2: string;
+  q3: string;
+  q4: string;
+  stop_doing?: string | null;
+  resistance_block?: string | null;
+};
 
-  const weekStartDate = getWeekStart(new Date());
+export default function ReviewPage() {
+  const [review, setReview] = useState<Review | null>(null);
+  const weekStartDate = getWeekStart(new Date()).toISOString().slice(0, 10);
 
-  const review = await prisma.weeklyReview.findUnique({
-    where: { userId_weekStartDate: { userId: session.user.id, weekStartDate } },
-  });
+  useEffect(() => {
+    const load = async () => {
+      const payload = await apiFetch<{ review: Review | null }>(
+        `/review?weekStart=${weekStartDate}`,
+      );
+      setReview(payload.review);
+    };
+    load().catch(() => null);
+  }, [weekStartDate]);
 
   return (
     <div className="space-y-6">
@@ -29,8 +41,8 @@ export default async function ReviewPage() {
         q2={review?.q2}
         q3={review?.q3}
         q4={review?.q4}
-        stopDoing={review?.stopDoing}
-        resistanceBlock={review?.resistanceBlock}
+        stopDoing={review?.stop_doing}
+        resistanceBlock={review?.resistance_block}
         locked={Boolean(review)}
       />
     </div>

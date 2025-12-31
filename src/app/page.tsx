@@ -1,12 +1,15 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getServerAuthSession } from "@/lib/auth";
+import { useEffect } from "react";
 
-export default async function Home() {
-  const session = await getServerAuthSession();
-  if (!session) {
-    redirect("/login");
-  }
+import { supabase } from "@/lib/supabaseClient";
 
-  redirect("/today");
+export default function Home() {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      window.location.href = data.session ? "/today" : "/login";
+    });
+  }, []);
+
+  return null;
 }

@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 
 import { buildPlanImportPrompt } from "@/lib/planImport";
-import { importPlanJson, validatePlanJson } from "@/app/(app)/plan/import/actions";
+import { apiFetch } from "@/lib/api";
 
 export default function PlanImportPage() {
   const [days, setDays] = useState(30);
@@ -31,12 +31,17 @@ export default function PlanImportPage() {
 
   const handleValidate = () => {
     startTransition(async () => {
-      const result = await validatePlanJson({ json: jsonValue, hoursPerDay });
-      if (result.ok) {
+      try {
+        const payload = JSON.parse(jsonValue);
+        await apiFetch("/plan/validate", {
+          method: "POST",
+          body: JSON.stringify({ plan: payload }),
+        });
         toast.success("JSON is valid.");
         setIsValid(true);
-      } else {
-        toast.error(result.error || "Invalid JSON.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid JSON.";
+        toast.error(message);
         setIsValid(false);
       }
     });
@@ -44,14 +49,22 @@ export default function PlanImportPage() {
 
   const handleCreate = () => {
     startTransition(async () => {
-      const result = await importPlanJson({ json: jsonValue, hoursPerDay });
-      if (result.ok) {
+      try {
+        const payload = JSON.parse(jsonValue);
+        const result = await apiFetch<{ summary?: { days: number; tasks: number; hours: number } }>(
+          "/plan/import",
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          },
+        );
         setSummary(result.summary ?? null);
         toast.success("Plan created.");
         setIsValid(false);
         setJsonValue("");
-      } else {
-        toast.error(result.error || "Import failed.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Import failed.";
+        toast.error(message);
       }
     });
   };

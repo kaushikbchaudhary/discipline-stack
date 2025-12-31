@@ -1,33 +1,65 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getServerAuthSession } from "@/lib/auth";
-import {
-  getDailyCompletionStats,
-  getOutputQualityStats,
-  getStreakMetrics,
-  getWeeklySummaries,
-} from "@/lib/analytics";
+import { useEffect, useMemo, useState } from "react";
+
 import { dateKey } from "@/lib/time";
 import ExecutionRing from "@/components/charts/ExecutionRing";
+import { apiFetch } from "@/lib/api";
 
-export default async function DashboardPage() {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+type DailyStat = {
+  key: string;
+  date: string;
+  status: "complete" | "incomplete";
+  mandatoryCompletedCount: number;
+  mandatoryTotalCount: number;
+  outputSummary: string;
+};
 
-  const userId = session.user.id;
-  const [dailyStats, streaks, outputStats, weeklySummaries] = await Promise.all([
-    getDailyCompletionStats(userId, 30),
-    getStreakMetrics(userId),
-    getOutputQualityStats(userId, 8),
-    getWeeklySummaries(userId),
-  ]);
+type OutputTimelineItem = {
+  date: string;
+  outputType: string;
+  outputContent: string;
+};
 
-  const toDate = (value: Date | string) => new Date(value);
+type WeeklySummary = {
+  weekStart: string;
+  completionRate: number;
+  mostProductiveDay: string;
+  quote?: string;
+};
 
-  const completedDays = dailyStats.filter((item) => item.status === "complete").length;
-  const incompleteDays = dailyStats.filter((item) => item.status === "incomplete").length;
+export default function DashboardPage() {
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [streaks, setStreaks] = useState({ current: 0, longest: 0 });
+  const [outputStats, setOutputStats] = useState<{ timeline: OutputTimelineItem[] }>({ timeline: [] });
+  const [weeklySummaries, setWeeklySummaries] = useState<WeeklySummary[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const payload = await apiFetch<{
+        dailyStats: DailyStat[];
+        streaks: { current: number; longest: number };
+        outputStats: { timeline: OutputTimelineItem[] };
+        weeklySummaries: WeeklySummary[];
+      }>("/dashboard");
+      setDailyStats(payload.dailyStats ?? []);
+      setStreaks(payload.streaks ?? { current: 0, longest: 0 });
+      setOutputStats(payload.outputStats ?? { timeline: [] });
+      setWeeklySummaries(payload.weeklySummaries ?? []);
+    };
+    load().catch(() => null);
+  }, []);
+
+  const toDate = (value: string) => new Date(value);
+
+  const completedDays = useMemo(
+    () => dailyStats.filter((item) => item.status === "complete").length,
+    [dailyStats],
+  );
+  const incompleteDays = useMemo(
+    () => dailyStats.filter((item) => item.status === "incomplete").length,
+    [dailyStats],
+  );
 
   return (
     <div className="space-y-10">

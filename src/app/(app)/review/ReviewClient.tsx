@@ -2,9 +2,9 @@
 
 import { useTransition, type FormEvent } from "react";
 import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 
-import { saveWeeklyReview } from "@/app/(app)/review/actions";
+import { apiFetch } from "@/lib/api";
+import { getWeekStart } from "@/lib/time";
 
 type ReviewClientProps = {
   q1?: string | null;
@@ -25,19 +25,30 @@ export default function ReviewClient({
   resistanceBlock,
   locked,
 }: ReviewClientProps) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      const result = await saveWeeklyReview(formData);
-      if (result.ok) {
+      try {
+        await apiFetch("/review", {
+          method: "POST",
+          body: JSON.stringify({
+            weekStartDate: formData.get("weekStartDate"),
+            q1: formData.get("q1"),
+            q2: formData.get("q2"),
+            q3: formData.get("q3"),
+            q4: formData.get("q4"),
+            stopDoing: formData.get("stopDoing"),
+            resistanceBlock: formData.get("resistanceBlock"),
+          }),
+        });
         toast.success("Weekly review saved.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Could not save.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not save.";
+        toast.error(message);
       }
     });
   };
@@ -45,6 +56,11 @@ export default function ReviewClient({
   return (
     <div className="space-y-6">
       <form onSubmit={handleSave} className="card space-y-4 p-6">
+      <input
+        type="hidden"
+        name="weekStartDate"
+        value={getWeekStart(new Date()).toISOString().slice(0, 10)}
+      />
       <div>
         <label className="text-sm font-medium">What moved me closer to the goal?</label>
         <textarea

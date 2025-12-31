@@ -1,38 +1,21 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import toast from "react-hot-toast";
 
-import { registerUser } from "@/app/login/actions";
-
-const initialState = { ok: false, error: "" };
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [isPending, startTransition] = useTransition();
-  const [state, formAction] = useActionState(registerUser, initialState);
 
   useEffect(() => {
-    if (state.ok) {
-      toast.success("Account created. Signing you in.");
-      startTransition(async () => {
-        const email = (document.getElementById("signup-email") as HTMLInputElement)?.value;
-        const password = (document.getElementById(
-          "signup-password",
-        ) as HTMLInputElement)?.value;
-        await signIn("credentials", {
-          email,
-          password,
-          callbackUrl: "/onboarding",
-        });
-      });
-    }
-
-    if (state.error) {
-      toast.error(state.error);
-    }
-  }, [state, startTransition]);
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        window.location.href = "/today";
+      }
+    });
+  }, []);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,23 +23,36 @@ export default function LoginPage() {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      callbackUrl: "/today",
-      redirect: false,
-    });
-
-    if (result?.error) {
-      toast.error("Invalid credentials.");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      toast.error(error.message || "Invalid credentials.");
       return;
     }
-
     toast.success("Welcome back.");
     window.location.href = "/today";
   };
 
-  const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_ENABLED);
+  const handleSignup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get("name"));
+    const email = String(formData.get("email"));
+    const password = String(formData.get("password"));
+
+    startTransition(async () => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      });
+      if (error) {
+        toast.error(error.message || "Could not create account.");
+        return;
+      }
+      toast.success("Account created. Check your email if confirmation is required.");
+      window.location.href = "/today";
+    });
+  };
 
   return (
     <div className="app-shell flex min-h-screen items-center justify-center px-6 py-16">
@@ -129,7 +125,7 @@ export default function LoginPage() {
                 </button>
               </form>
             ) : (
-              <form action={formAction} className="space-y-4">
+              <form onSubmit={handleSignup} className="space-y-4">
                 <div>
                   <label className="text-sm font-medium">Name</label>
                   <input
@@ -170,16 +166,6 @@ export default function LoginPage() {
                 </button>
               </form>
             )}
-
-            {googleEnabled ? (
-              <button
-                type="button"
-                onClick={() => signIn("google", { callbackUrl: "/today" })}
-                className="w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-black"
-              >
-                Continue with Google
-              </button>
-            ) : null}
           </div>
         </div>
       </div>

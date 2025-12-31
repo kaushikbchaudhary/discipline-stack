@@ -1,23 +1,6 @@
-"use client";
-
-import { useActionState, useEffect } from "react";
-import toast from "react-hot-toast";
-
-import { saveOnboarding } from "@/app/(app)/onboarding/actions";
-
-const initialState = { ok: false, error: "" };
-
 export default function OnboardingForm() {
-  const [state, formAction] = useActionState(saveOnboarding, initialState);
-
-  useEffect(() => {
-    if (state.error) {
-      toast.error(state.error);
-    }
-  }, [state.error]);
-
   return (
-    <form action={formAction} className="card space-y-6 p-6">
+    <div className="card space-y-6 p-6">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
           <label className="text-sm font-medium">Primary goal title</label>
@@ -95,12 +78,9 @@ export default function OnboardingForm() {
           />
         </div>
       </div>
-      <button
-        type="submit"
-        className="w-full rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
-      >
-        Generate timetable
-      </button>
-    </form>
+      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-alt)] px-4 py-3 text-sm text-muted">
+        Onboarding will be reconnected to the Worker API in the next step.
+      </div>
+    </div>
   );
 }

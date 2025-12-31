@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { supabase } from "@/lib/supabaseClient";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -48,7 +48,10 @@ export default function Nav({
           })}
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => {
+              supabase.auth.signOut();
+              window.location.href = "/login";
+            }}
             className="rounded-full border border-[color:var(--border)] px-3 py-1.5 text-sm text-muted hover:text-black"
           >
             Sign out

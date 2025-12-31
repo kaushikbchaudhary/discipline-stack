@@ -1,0 +1,11 @@
+name = "execution-os-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+
+[vars]
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
+SUPABASE_SERVICE_ROLE_KEY = ""
+VAPID_PUBLIC_KEY = ""
+VAPID_PRIVATE_KEY = ""
+VAPID_SUBJECT = ""

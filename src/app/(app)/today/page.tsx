@@ -1,56 +1,70 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getServerAuthSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { refreshDailyCompletion } from "@/lib/progress";
+import { useEffect, useMemo, useState } from "react";
+
 import { dateKey, startOfDay } from "@/lib/time";
 import TodayClient from "@/app/(app)/today/TodayClient";
+import { apiFetch } from "@/lib/api";
 
-export default async function TodayPage() {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+type TaskView = {
+  id: string;
+  title: string;
+  description: string;
+  startTime: string | null;
+  endTime: string | null;
+  durationMinutes: number | null;
+  completed: boolean;
+};
 
-  const userId = session.user.id;
+type TodayPayload = {
+  tasks: {
+    id: string;
+    title: string;
+    description: string | null;
+    start_time: string;
+    end_time: string;
+    duration_minutes: number;
+    completed: boolean;
+  }[];
+  completion: { output_type: string | null; output_content: string | null } | null;
+};
+
+export default function TodayPage() {
   const today = startOfDay(new Date());
+  const [tasks, setTasks] = useState<TaskView[]>([]);
+  const [outputType, setOutputType] = useState<string | null>(null);
+  const [outputContent, setOutputContent] = useState<string | null>(null);
 
-  const [daily, plans] = await Promise.all([
-    prisma.dailyCompletion.findUnique({
-      where: { userId_date: { userId, date: today } },
-    }),
-    prisma.plan.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      include: { tasks: true },
-    }),
-  ]);
+  useEffect(() => {
+    const load = async () => {
+      const payload = await apiFetch<TodayPayload>(`/today?date=${dateKey(today)}`);
+      const mapped =
+        payload.tasks?.map((task) => ({
+          id: task.id,
+          title: task.title,
+          description: task.description ?? "",
+          startTime: task.start_time ?? null,
+          endTime: task.end_time ?? null,
+          durationMinutes: task.duration_minutes ?? null,
+          completed: task.completed,
+        })) ?? [];
+      setTasks(mapped);
+      setOutputType(payload.completion?.output_type ?? null);
+      setOutputContent(payload.completion?.output_content ?? null);
+    };
+    load().catch(() => null);
+  }, [today]);
 
-  const plan =
-    plans.find((item) =>
-      item.tasks.some((task) => startOfDay(task.date).getTime() === today.getTime()),
-    ) ?? plans[0];
+  const progress = useMemo(() => {
+    const doneTasks = tasks.filter((task) => task.completed).length;
+    const outputReady = Boolean(outputType && outputContent);
+    const totalCount = tasks.length + 1;
+    const doneCount = doneTasks + (outputReady ? 1 : 0);
+    const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+    return { percent, doneCount, totalCount, outputReady };
+  }, [tasks, outputType, outputContent]);
 
-  const completionState = await refreshDailyCompletion(userId, today);
-
-  const tasks =
-    plan?.tasks
-      .filter((task) => startOfDay(task.date).getTime() === today.getTime())
-      .map((task) => ({
-        id: task.id,
-        title: task.title,
-        description: task.description ?? "",
-        startTime: task.startTime ?? null,
-        endTime: task.endTime ?? null,
-        durationMinutes: task.durationMinutes ?? null,
-        completed: task.completed,
-      })) ?? [];
-
-  const doneTasks = tasks.filter((task) => task.completed).length;
-  const outputReady = Boolean(daily?.outputType && daily?.outputContent);
-  const totalCount = tasks.length + 1;
-  const doneCount = doneTasks + (outputReady ? 1 : 0);
-  const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+  const isComplete = progress.outputReady && tasks.length > 0 && tasks.every((task) => task.completed);
 
   return (
     <div className="space-y-6">
@@ -62,10 +76,10 @@ export default async function TodayPage() {
 
       <TodayClient
         tasks={tasks}
-        outputType={daily?.outputType}
-        outputContent={daily?.outputContent}
-        progress={{ percent, doneCount, totalCount }}
-        status={{ outputReady, isComplete: completionState.isComplete }}
+        outputType={outputType}
+        outputContent={outputContent}
+        progress={{ percent: progress.percent, doneCount: progress.doneCount, totalCount: progress.totalCount }}
+        status={{ outputReady: progress.outputReady, isComplete }}
       />
 
       {tasks.length === 0 ? (

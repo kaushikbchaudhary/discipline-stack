@@ -2,10 +2,9 @@
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 
 import { dateKey } from "@/lib/time";
-import { addTask, deleteTask, toggleTaskCompletion, updateTask } from "@/app/(app)/plan/actions";
+import { apiFetch } from "@/lib/api";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -35,7 +34,6 @@ type PlanClientProps = {
 };
 
 export default function PlanClient({ planName, startDate, days }: PlanClientProps) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [activeTask, setActiveTask] = useState<PlanTaskView | null>(null);
   const [activeDay, setActiveDay] = useState<PlanDayView | null>(null);
@@ -80,28 +78,18 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
     [days, selectedMonth],
   );
 
-  const runAction = async (
-    action: (formData: FormData) => Promise<{ ok: boolean; error?: string }>,
-    formData: FormData,
-    message: string,
-  ) => {
-    const result = await action(formData);
-    if (result.ok) {
-      toast.success(message);
-      router.refresh();
-    } else {
-      toast.error(result.error || "Action failed.");
-    }
-  };
-
   const handleTaskToggle = (taskId: string) => {
     startTransition(async () => {
-      const result = await toggleTaskCompletion(taskId);
-      if (result.ok) {
+      try {
+        await apiFetch("/tasks/toggle", {
+          method: "POST",
+          body: JSON.stringify({ taskId }),
+        });
         toast.success("Task updated.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Action failed.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Action failed.";
+        toast.error(message);
       }
     });
   };
@@ -114,6 +102,7 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
   const isModalOpen = Boolean(activeTask || activeDay);
   const modalTitle = activeTask ? "Edit task" : "Add task";
   const modalDate = activeTask?.date ?? activeDay?.date ?? "";
+  const modalDateKey = modalDate ? dateKey(new Date(modalDate)) : "";
   const detailDate = detailDay?.date ?? "";
 
   return (
@@ -321,7 +310,7 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">{modalTitle}</p>
-                <h2 className="text-2xl font-semibold">{modalDate ? dateKey(new Date(modalDate)) : ""}</h2>
+                <h2 className="text-2xl font-semibold">{modalDateKey}</h2>
               </div>
               <button
                 type="button"
@@ -337,16 +326,60 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
                 event.preventDefault();
                 const formData = new FormData(event.currentTarget);
                 if (activeTask) {
-                  startTransition(() => runAction(updateTask, formData, "Task updated."));
+                  startTransition(async () => {
+                    try {
+                      await apiFetch("/tasks", {
+                        method: "PATCH",
+                        body: JSON.stringify({
+                          id: activeTask.id,
+                          title: String(formData.get("title") || ""),
+                          description: String(formData.get("description") || ""),
+                          startTime: String(formData.get("startTime") || ""),
+                          endTime: String(formData.get("endTime") || ""),
+                          durationMinutes: Number(formData.get("durationMinutes") || 0),
+                          incompleteReason: String(formData.get("incompleteReason") || ""),
+                        }),
+                      });
+                      toast.success("Task updated.");
+                      window.location.reload();
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Action failed.";
+                      toast.error(message);
+                    }
+                  });
                 } else {
-                  startTransition(() => runAction(addTask, formData, "Task added."));
+                  startTransition(async () => {
+                    try {
+                      if (!activeDay?.id) {
+                        toast.error("Missing day reference.");
+                        return;
+                      }
+                      await apiFetch("/tasks", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          planDayId: activeDay?.id,
+                          title: String(formData.get("title") || ""),
+                          description: String(formData.get("description") || ""),
+                          date: String(formData.get("date") || ""),
+                          startTime: String(formData.get("startTime") || ""),
+                          endTime: String(formData.get("endTime") || ""),
+                          durationMinutes: Number(formData.get("durationMinutes") || 0),
+                        }),
+                      });
+                      toast.success("Task added.");
+                      window.location.reload();
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Action failed.";
+                      toast.error(message);
+                    }
+                  });
                 }
                 closeModal();
               }}
               className="mt-6 max-h-[70vh] overflow-y-auto pr-2 grid gap-4"
             >
               {activeTask ? <input type="hidden" name="id" value={activeTask.id} /> : null}
-              <input type="hidden" name="date" value={modalDate} />
+              <input type="hidden" name="date" value={modalDateKey} />
 
               <div>
                 <label className="text-sm font-semibold">Title</label>
@@ -414,9 +447,19 @@ export default function PlanClient({ planName, startDate, days }: PlanClientProp
                   <button
                     type="button"
                     onClick={() => {
-                      const formData = new FormData();
-                      formData.set("id", activeTask.id);
-                      startTransition(() => runAction(deleteTask, formData, "Task deleted."));
+                      startTransition(async () => {
+                        try {
+                          await apiFetch("/tasks", {
+                            method: "DELETE",
+                            body: JSON.stringify({ id: activeTask.id }),
+                          });
+                          toast.success("Task deleted.");
+                          window.location.reload();
+                        } catch (error) {
+                          const message = error instanceof Error ? error.message : "Action failed.";
+                          toast.error(message);
+                        }
+                      });
                       closeModal();
                     }}
                     className="rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"

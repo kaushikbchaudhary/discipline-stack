@@ -1,16 +1,6 @@
 "use client";
 
-import { useTransition, type FormEvent } from "react";
-import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
-
 import { minutesToTimeString } from "@/lib/time";
-import {
-  createBlock,
-  deleteBlock,
-  toggleScheduleLock,
-  updateBlock,
-} from "@/app/(app)/timetable/actions";
 
 const categories = [
   "CoreWork",
@@ -37,52 +27,10 @@ type TimetableClientProps = {
 };
 
 export default function TimetableClient({ blocks, locked }: TimetableClientProps) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  const runAction = async (action: (formData: FormData) => Promise<{ ok: boolean; error?: string }>, formData: FormData, successMessage: string) => {
-    const result = await action(formData);
-    if (result.ok) {
-      toast.success(successMessage);
-      router.refresh();
-    } else {
-      toast.error(result.error || "Action failed.");
-    }
-  };
-
-  const handleCreate = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    startTransition(() => runAction(createBlock, formData, "Block added."));
-    event.currentTarget.reset();
-  };
-
-  const handleUpdate = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    startTransition(() => runAction(updateBlock, formData, "Block updated."));
-  };
-
-  const handleDelete = (blockId: string) => {
-    const confirmed = locked ? window.confirm("Schedule is locked. Confirm delete?") : true;
-    const formData = new FormData();
-    formData.set("id", blockId);
-    formData.set("confirmed", confirmed ? "true" : "false");
-    startTransition(() => runAction(deleteBlock, formData, "Block deleted."));
-  };
-
-  const handleLockToggle = () => {
-    startTransition(async () => {
-      const result = await toggleScheduleLock();
-      if (result.ok) {
-        toast.success(result.locked ? "Schedule locked." : "Schedule unlocked.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Could not update lock.");
-      }
-    });
-  };
-
+  const handleCreate = () => null;
+  const handleUpdate = () => null;
+  const handleDelete = () => null;
+  const handleLockToggle = () => null;
   return (
     <div className="space-y-8">
       <div className="card p-6">
@@ -96,6 +44,7 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
           <button
             type="button"
             onClick={handleLockToggle}
+            disabled
             className={`rounded-full px-4 py-2 text-sm font-semibold ${
               locked
                 ? "bg-[color:var(--accent)] text-white"
@@ -151,7 +100,7 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
           )}
           <button
             type="submit"
-            disabled={isPending}
+            disabled
             className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             Add block
@@ -216,14 +165,14 @@ export default function TimetableClient({ blocks, locked }: TimetableClientProps
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="submit"
-                disabled={isPending}
+                disabled
                 className="rounded-xl bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white"
               >
                 Save changes
               </button>
               <button
                 type="button"
-                disabled={isPending}
+                disabled
                 onClick={() => handleDelete(block.id)}
                 className="rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-muted"
               >

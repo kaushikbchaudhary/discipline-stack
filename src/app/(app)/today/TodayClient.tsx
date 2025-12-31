@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 
-import { saveArtifactFile, saveOutput, toggleTaskCompletion } from "@/app/(app)/today/actions";
+import { apiFetch } from "@/lib/api";
+import { dateKey } from "@/lib/time";
 
 type TaskView = {
   id: string;
@@ -38,7 +38,6 @@ export default function TodayClient({
   progress,
   status,
 }: TodayClientProps) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [permission, setPermission] = useState<NotificationPermission>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -65,15 +64,10 @@ export default function TodayClient({
   };
 
   const sendSubscription = async (subscription: PushSubscription) => {
-    const response = await fetch("/api/push/subscribe", {
+    await apiFetch("/push/subscribe", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(subscription),
     });
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      throw new Error(data?.error || "Could not save subscription.");
-    }
   };
 
   const ensurePushSubscription = async () => {
@@ -121,12 +115,16 @@ export default function TodayClient({
 
   const handleTaskToggle = (taskId: string) => {
     startTransition(async () => {
-      const result = await toggleTaskCompletion(taskId);
-      if (result.ok) {
+      try {
+        await apiFetch("/tasks/toggle", {
+          method: "POST",
+          body: JSON.stringify({ taskId }),
+        });
         toast.success("Task updated.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Could not update task.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not update task.";
+        toast.error(message);
       }
     });
   };
@@ -135,27 +133,30 @@ export default function TodayClient({
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      const result = await saveOutput(formData);
-      if (result.ok) {
+      const outputType = String(formData.get("outputType") || "TEXT");
+      const outputContent = String(formData.get("outputContent") || "");
+      try {
+        await apiFetch("/artifacts/text", {
+          method: "POST",
+          body: JSON.stringify({
+            date: dateKey(new Date()),
+            outputType,
+            outputContent,
+          }),
+        });
         toast.success("Proof saved.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Add a valid proof entry.");
+        window.location.reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Add a valid proof entry.";
+        toast.error(message);
       }
     });
   };
 
   const handleFile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      const result = await saveArtifactFile(formData);
-      if (result.ok) {
-        toast.success("File uploaded.");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Could not upload file.");
-      }
+      toast.error("File uploads will be enabled after storage setup.");
     });
   };
 
@@ -288,13 +289,13 @@ export default function TodayClient({
           <input
             name="file"
             type="file"
-            required
+            disabled
             className="w-full rounded-xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm"
           />
           <p className="text-xs text-muted">Max file size: 20MB.</p>
           <button
             type="submit"
-            disabled={isPending}
+            disabled
             className="w-full rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold"
           >
             Upload file proof

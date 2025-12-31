@@ -1,13 +1,6 @@
 import ExportClient from "@/app/(app)/export/ExportClient";
-import { getServerAuthSession } from "@/lib/auth";
-import { redirect } from "next/navigation";
 
-export default async function ExportPage() {
-  const session = await getServerAuthSession();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
+export default function ExportPage() {
   return (
     <div className="space-y-6">
       <div>

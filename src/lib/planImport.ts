@@ -82,16 +82,6 @@ export const validatePlanImport = (plan: PlanImport, hoursPerDay: number) => {
       issues.push(`Day ${index + 1} date must be ${expected}`);
     }
 
-    const maxTasks = Math.min(8, hoursPerDay * 2);
-    if (day.tasks.length > maxTasks) {
-      issues.push(`Day ${index + 1} exceeds daily capacity`);
-    }
-
-    const totalMinutes = day.tasks.reduce((sum, task) => sum + task.durationMinutes, 0);
-    if (totalMinutes > hoursPerDay * 60) {
-      issues.push(`Day ${index + 1} exceeds daily capacity`);
-    }
-
     const titleSet = new Set<string>();
     day.tasks.forEach((task) => {
       if (titleSet.has(task.title)) {
@@ -179,13 +169,10 @@ HARD CONSTRAINTS:
 8) Each task date must match the day date.
 9) endTime - startTime must equal durationMinutes.
 10) Task titles must be specific, actionable, and <= 80 characters.
-11) Daily capacity rule:
-    - Total durationMinutes per day must be <= HOURS_PER_DAY * 60.
-    - Max tasks per day = min(8, HOURS_PER_DAY * 2).
-12) No duplicate task titles within the same day.
-13) completed must always be false.
-14) incompleteReason must always be null.
-15) No motivational language.
+11) No duplicate task titles within the same day.
+12) completed must always be false.
+13) incompleteReason must always be null.
+14) No motivational language.
 
 DETERMINISTIC PLANNING RULES:
 - Use the GOAL and GOAL_TYPE to shape tasks.
